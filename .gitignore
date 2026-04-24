@@ -1,0 +1,86 @@
+# ========================================================================
+# .gitignore — Glamour Documenter
+# Für .NET-Projekte mit Fokus auf Dalamud-Plugin-Entwicklung.
+# ========================================================================
+
+# ---- Build-Output -------------------------------------------------------
+bin/
+GlamourDocumenter/obj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Oo]ut/
+
+# Dalamud-Packager-Output
+[Pp]ackager/
+
+# ---- IDE / Editor -------------------------------------------------------
+# Visual Studio / Rider
+.vs/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+.vshistory/
+
+# VS Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# JetBrains
+*.DotSettings.user
+.idea/
+
+# ---- NuGet --------------------------------------------------------------
+*.nupkg
+*.snupkg
+**/packages/*
+!**/packages/build/
+*.nuget.props
+*.nuget.targets
+
+# ---- Betriebssystem -----------------------------------------------------
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ---- Logs & Temp --------------------------------------------------------
+*.log
+*.tmp
+*.temp
+*.swp
+*~
+
+# ---- Secrets / Lokale Pfade --------------------------------------------
+# Niemals lokale Umgebungsdaten committen.
+.env
+.env.*
+!.env.example
+secrets.json
+appsettings.Local.json
+appsettings.Development.json
+
+# Lokale Path-Overrides (z. B. wenn DalamudLibPath lokal anders gesetzt wird)
+Directory.Build.local.props
+
+# ---- Projekt-spezifisch ------------------------------------------------
+# Lokale Plugin-Exporte und Test-Dumps
+exports/
+*.export.md
+*.export.json
+
+# Dalamud-Dev-Build-Symlinks
+DalamudPackager/
+*.dalamud/
+/.claude/

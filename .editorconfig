@@ -1,0 +1,72 @@
+# ========================================================================
+# .editorconfig — Glamour Documenter
+# Konsistenter Stil über alle IDEs (Rider, VS, VS Code) hinweg.
+# ========================================================================
+
+root = true
+
+# ---- Alle Dateien -------------------------------------------------------
+[*]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# ---- Markdown darf trailing whitespace behalten (harte Zeilenumbrüche) ---
+[*.md]
+trim_trailing_whitespace = false
+indent_size = 2
+
+# ---- JSON / YAML --------------------------------------------------------
+[*.{json,yml,yaml}]
+indent_size = 2
+
+# ---- C#-spezifisch ------------------------------------------------------
+[*.cs]
+indent_size = 4
+
+# using-Direktiven außerhalb Namespace, alphabetisch sortiert
+csharp_using_directive_placement = outside_namespace:warning
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = false
+
+# File-scoped namespaces (neuer Stil, weniger Einrückung)
+csharp_style_namespace_declarations = file_scoped:suggestion
+
+# Ausdrucks-bevorzugende Stile
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+csharp_style_expression_bodied_properties = true:suggestion
+csharp_style_expression_bodied_constructors = false:silent
+
+# var nur, wenn Typ aus dem Kontext offensichtlich
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = false:suggestion
+csharp_style_var_for_built_in_types = false:suggestion
+
+# Pattern-Matching bevorzugen
+csharp_style_pattern_matching_over_is_with_cast_check = true:suggestion
+csharp_style_pattern_matching_over_as_with_null_check = true:suggestion
+
+# Moderne Sprach-Features
+csharp_prefer_simple_using_statement = true:suggestion
+csharp_prefer_braces = true:suggestion
+csharp_style_prefer_switch_expression = true:suggestion
+
+# Naming-Konventionen
+dotnet_naming_rule.private_fields_underscore.severity = warning
+dotnet_naming_rule.private_fields_underscore.symbols = private_fields
+dotnet_naming_rule.private_fields_underscore.style = underscore_prefixed
+
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+
+dotnet_naming_style.underscore_prefixed.required_prefix = _
+dotnet_naming_style.underscore_prefixed.capitalization = camel_case
+
+# Nullability: Warnungen NICHT unterdrücken
+dotnet_diagnostic.CS8600.severity = warning
+dotnet_diagnostic.CS8602.severity = warning
+dotnet_diagnostic.CS8603.severity = warning
+dotnet_diagnostic.CS8604.severity = warning
