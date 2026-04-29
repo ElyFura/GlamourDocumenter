@@ -33,6 +33,12 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 
+    <ItemGroup>
+      <Content Include="..\icons\icon.png" Link="icons\icon.png">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        <Visible>false</Visible>
+      </Content>
+    </ItemGroup>
   <!--
     Externe IPC-Bindings für Dritt-Plugins. Penumbra.Api und Glamourer.Api
     sind nicht Teil der Dalamud-SDK und müssen weiter explizit
@@ -40,7 +46,6 @@
     IPC-Endpoints und braucht kein Paket.
   -->
   <ItemGroup>
-  <Content Include="..\icons\icon.png" Link="icons\icon.png">
     <PackageReference Include="Penumbra.Api" Version="5.13.1" />
     <PackageReference Include="Glamourer.Api" Version="2.8.0" />
   </ItemGroup>
