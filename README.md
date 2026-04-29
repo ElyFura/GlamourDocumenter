@@ -51,13 +51,13 @@ lokalen Charakter als Markdown-, HTML- oder JSON-Dokumentation.
 
 ## Kompatibilität
 
-| Komponente | Version |
-|---|---|
-| Dalamud API Level | 14 |
-| Target Framework | `net10.0-windows`, x64 |
-| Penumbra.Api | 5.13.1 (IPC-Major 5) |
+| Komponente | Version                                                    |
+|---|------------------------------------------------------------|
+| Dalamud API Level | 15 Dalamud.NET.Sdk/14.0.2                                 |
+| Target Framework | `net10.0-windows`, x64                                     |
+| Penumbra.Api | 5.13.1 (IPC-Major 5)                                       |
 | Glamourer.Api | 2.8.0 (IPC-Major 1 — verifiziert gegen Glamourer v1.6.0.5) |
-| Customize+ IPC | Major 6 (string-basiert) |
+| Customize+ IPC | Major 6 (string-basiert)                                   |
 
 ## Datenfluss
 
