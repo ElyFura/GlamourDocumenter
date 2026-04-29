@@ -18,7 +18,7 @@
   -->
 
   <PropertyGroup>
-    <Version>0.1.2.0</Version>
+    <Version>0.1.2.1</Version>
     <PackageProjectUrl>https://github.com/ElyFura/GlamourDocumenter</PackageProjectUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <IsPackable>false</IsPackable>
@@ -40,6 +40,7 @@
     IPC-Endpoints und braucht kein Paket.
   -->
   <ItemGroup>
+  <Content Include="..\icons\icon.png" Link="icons\icon.png">
     <PackageReference Include="Penumbra.Api" Version="5.13.1" />
     <PackageReference Include="Glamourer.Api" Version="2.8.0" />
   </ItemGroup>
