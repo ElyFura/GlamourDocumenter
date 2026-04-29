@@ -1,103 +1,47 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Dalamud.NET.Sdk/14.0.2">
 
   <!--
     ====================================================================
     GlamourDocumenter.csproj
 
-    Dalamud-Plugin für FFXIV. Build-Output landet im Standard-Packager-
-    Layout und kann direkt als Dev-Plugin in XIVLauncher geladen werden.
-    Siehe CLAUDE.md §2 (Tech-Stack) und §7 (Build & Test).
+    Dalamud-Plugin für FFXIV. Nutzt die offizielle Dalamud.NET.Sdk —
+    diese liefert TargetFramework, alle Standard-Refs (Dalamud,
+    Dalamud.Bindings.ImGui, FFXIVClientStructs, Lumina, Lumina.Excel,
+    Newtonsoft.Json) und den DalamudPackager-MSBuild-Task. Damit
+    entfallen die früher hartkodierten <Reference HintPath>-Pfade auf
+    %AppData%\XIVLauncher\addon\Hooks\dev — der Build ist jetzt auf
+    jeder Maschine reproduzierbar.
+
+    Siehe: https://dalamud.dev/plugin-development/how-tos/v12-SDK-migration
+    Sample: https://github.com/goatcorp/SamplePlugin
     ====================================================================
   -->
 
   <PropertyGroup>
+    <Version>0.1.1.0</Version>
+    <PackageProjectUrl>https://github.com/ElyFura/GlamourDocumenter</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <IsPackable>false</IsPackable>
+
     <!--
-      CLAUDE.md §2 pinnt net9.0-windows, aber Dalamud 14.x (API Level 12)
-      liefert bereits eine .NET-10-Build. Beibehalten von net9.0 erzeugt
-      CS1705 (System.Runtime-Version-Mismatch). Bump auf net10.0 ist für
-      diese Dalamud-Version zwingend — CLAUDE.md §2-Tabelle entsprechend
-      im Follow-up zu aktualisieren.
+      Code-Stil-Defaults; alles andere (TargetFramework, Platform,
+      Nullable usw.) zieht die SDK selbst.
     -->
-    <TargetFramework>net10.0-windows</TargetFramework>
-    <Platforms>x64</Platforms>
-    <Platform>x64</Platform>
-    <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
-    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
-    <!--
-      true = NuGet-Dependencies (Penumbra.Api, Glamourer.Api) werden neben
-      die Plugin-DLL kopiert. Dalamud-Refs sind über <Private>false</Private>
-      unten bereits vom Kopieren ausgenommen, damit der Host seine eigenen
-      Assemblies verwendet.
-    -->
-    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-    <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
-    <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
-    <Version>0.1.0</Version>
-    <AssemblyVersion>0.1.0.0</AssemblyVersion>
-    <FileVersion>0.1.0.0</FileVersion>
-    <Deterministic>true</Deterministic>
   </PropertyGroup>
 
   <!--
-    Dalamud-Dev-Lib-Pfad. Hart verdrahtet auf die Standard-Installation
-    von XIVLauncher. Kann bei Bedarf via Directory.Build.local.props
-    überschrieben werden (siehe .gitignore).
+    Externe IPC-Bindings für Dritt-Plugins. Penumbra.Api und Glamourer.Api
+    sind nicht Teil der Dalamud-SDK und müssen weiter explizit
+    referenziert werden. Customize+ verwendet rein string-basierte
+    IPC-Endpoints und braucht kein Paket.
   -->
-  <PropertyGroup>
-    <DalamudLibPath>$(AppData)\XIVLauncher\addon\Hooks\dev\</DalamudLibPath>
-  </PropertyGroup>
-
   <ItemGroup>
-    <Reference Include="Dalamud">
-      <HintPath>$(DalamudLibPath)Dalamud.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="Dalamud.Bindings.ImGui">
-      <HintPath>$(DalamudLibPath)Dalamud.Bindings.ImGui.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="FFXIVClientStructs">
-      <HintPath>$(DalamudLibPath)FFXIVClientStructs.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="Lumina">
-      <HintPath>$(DalamudLibPath)Lumina.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="Lumina.Excel">
-      <HintPath>$(DalamudLibPath)Lumina.Excel.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <!--
-      Glamourer.Api liefert Zustand als Newtonsoft.Json.Linq.JObject. Dalamud
-      bundled Newtonsoft selbst, daher Private=false.
-    -->
-    <Reference Include="Newtonsoft.Json">
-      <HintPath>$(DalamudLibPath)Newtonsoft.Json.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="DalamudPackager" Version="14.0.2" />
     <PackageReference Include="Penumbra.Api" Version="5.13.1" />
     <PackageReference Include="Glamourer.Api" Version="2.8.0" />
-  </ItemGroup>
-
-  <!--
-    Plugin-Manifest wird von DalamudPackager ausgelesen und in den
-    Build-Output kopiert.
-  -->
-  <ItemGroup>
-    <None Include="GlamourDocumenter.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
   </ItemGroup>
 
 </Project>

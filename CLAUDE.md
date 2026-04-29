@@ -26,17 +26,22 @@ Repo geplant, Distribution läuft über den Dev-Plugin-Loader meines XIVLauncher
 
 | Komponente            | Version / Quelle                            | Zweck                                   |
 |-----------------------|---------------------------------------------|-----------------------------------------|
-| TargetFramework       | `net10.0-windows`, x64                      | Plattform (Dalamud 14.x ist .NET 10)    |
+| **Build-SDK**         | `Dalamud.NET.Sdk/14.0.2`                    | Liefert TargetFramework, Standard-Refs (Dalamud, ImGui, FFXIVClientStructs, Lumina, Newtonsoft.Json) und DalamudPackager als MSBuild-Task |
 | Dalamud API           | Level 14 (lokale Dev-Installation)          | Plugin-Host                             |
-| `Penumbra.Api`        | NuGet 5.13.1 (Major 5)                      | IPC zu Penumbra                         |
-| `Glamourer.Api`       | NuGet 2.8.0 — IPC-Major **1** (verifiziert v1.6.0.5: (1,7)) | IPC zu Glamourer         |
+| `Penumbra.Api`        | NuGet 5.13.1 (Major 5)                      | IPC zu Penumbra (extern, kein Teil der SDK) |
+| `Glamourer.Api`       | NuGet 2.8.0 — IPC-Major **1** (verifiziert v1.6.0.5: (1,7)) | IPC zu Glamourer (extern)               |
 | Customize+            | String-basierte IPC (kein NuGet)            | IPC zu Customize+ (Major 6)             |
-| `DalamudPackager`     | NuGet 14.0.2                                | Build-Output als Plugin-ZIP             |
-| `ImGui.NET`           | aus Dalamud-Dev-Lib                         | UI                                      |
 | `System.Text.Json`    | BCL                                         | JSON-Export                             |
 
 **NIE** zusätzliche NuGet-Pakete ohne Rückfrage einführen. Das Plugin soll
 schlank bleiben.
+
+Die SDK setzt automatisch `TargetFramework`, `Platform`, `OutputType`,
+`Configurations`, sowie `LangVersion` und resolvt die Dalamud-DLLs gegen
+`%AppData%\XIVLauncher\addon\Hooks\dev\` — ein Build benötigt also nur
+diesen Ordner, keine hartkodierten `<Reference HintPath>`-Einträge mehr.
+Siehe [v12-SDK-migration](https://dalamud.dev/plugin-development/how-tos/v12-SDK-migration)
+und [SamplePlugin.csproj](https://github.com/goatcorp/SamplePlugin/blob/master/SamplePlugin/SamplePlugin.csproj).
 
 # Quellen
 
@@ -276,13 +281,15 @@ entfernt SeString-Payloads.
 dotnet build -c Release
 ```
 
-Output: `bin\x64\Release\net9.0-windows\GlamourDocumenter\` mit
-`GlamourDocumenter.dll` und allen Assets.
+Output: `GlamourDocumenter\bin\x64\Release\GlamourDocumenter\` mit
+`GlamourDocumenter.dll`, dem Manifest und `latest.zip` (für Custom-Repo-
+Install). Penumbra.Api.dll und Glamourer.Api.dll werden mit ausgepackt;
+Dalamud-Standard-DLLs nicht — die liefert der Host.
 
 **Voraussetzung:** `%AppData%\XIVLauncher\addon\Hooks\dev\` existiert und
-enthält eine aktuelle Dalamud-Dev-Build. `DalamudLibPath` in der `.csproj`
-zeigt dort hin. Wenn Claude Code diesen Pfad nicht auflösen kann: **nicht
-raten**, nachfragen.
+enthält eine aktuelle Dalamud-Dev-Build. Die `Dalamud.NET.Sdk` resolvt
+darauf automatisch. Wenn Claude Code den Pfad nicht auflösen kann (z. B.
+weil XIVLauncher nicht installiert): **nicht raten**, nachfragen.
 
 ### 7.2 Installation in XIVLauncher
 

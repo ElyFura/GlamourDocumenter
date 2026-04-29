@@ -150,7 +150,7 @@ public sealed class Plugin : IDalamudPlugin
     ///     Snapshot des LocalPlayers. Läuft asynchron via das MainWindow,
     ///     weil die Render-Logik ohnehin dort wohnt.
     /// </summary>
-    private void OnTerritoryChanged(ushort territoryId)
+    private void OnTerritoryChanged(uint territoryId)
     {
         if (!Config.AutoExportOnZoneChange)
             return;
