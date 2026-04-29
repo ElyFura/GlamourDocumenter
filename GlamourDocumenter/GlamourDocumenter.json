@@ -2,7 +2,7 @@
   "Author": "ElyFura",
   "Name": "Glamour Documenter",
   "InternalName": "GlamourDocumenter",
-  "AssemblyVersion": "0.1.2.1",
+  "AssemblyVersion": "0.1.2.2",
   "Description": "Exportiert kombinierte Einstellungen aus Penumbra, Glamourer und Customize+ als Markdown, HTML oder JSON.",
   "Punchline": "Penumbra + Glamourer + Customize+ in einem Dokument.",
   "RepoUrl": "https://github.com/ElyFura/GlamourDocumenter",
@@ -14,6 +14,6 @@
     "customize+"
   ],
   "DalamudApiLevel": 15,
-  "IconUrl": "https://raw.githubusercontent.com/ElyFura/GlamourDocumenter/main/icons/icon.png",
+  "IconUrl": "https://raw.githubusercontent.com/ElyFura/GlamourDocumenter/master/icons/icon.png",
   "AcceptsFeedback": false
 }
