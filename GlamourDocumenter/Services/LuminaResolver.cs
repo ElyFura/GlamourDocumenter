@@ -79,7 +79,7 @@ public sealed class LuminaResolver : IDisposable
     /// <returns>„Nothing" bei 0, Item-Name sonst, <c>null</c> bei unbekannter ID.</returns>
     public string? GetItemName(ulong itemId)
     {
-        if (itemId == 0)
+        if (itemId == 0 || IsNothingSentinel(itemId))
             return "Nothing";
 
         try
@@ -233,15 +233,19 @@ public sealed class LuminaResolver : IDisposable
     ///     hängt von der API-Version ab. Bei Sheet-not-found oder ID-Miss
     ///     liefern wir <c>null</c>.
     /// </summary>
-    public string? GetBonusItemName(uint bonusId)
+    public string? GetBonusItemName(ulong bonusId)
     {
-        if (bonusId == 0)
+        // Bits 0..15 = eigentliche BonusItemId (Model). Wenn die 0 sind,
+        // ist der Slot leer (Glamourer baut die "Nothing"-Variante über
+        // CustomItemId(model: 0, variant: 0, slot)).
+        var modelId = (uint)(bonusId & 0xFFFF);
+        if (modelId == 0)
             return "Nothing";
 
         try
         {
             var sheet = _dataManager.GetExcelSheet<Glasses>();
-            if (sheet.TryGetRow(bonusId, out var row))
+            if (sheet.TryGetRow(modelId, out var row))
             {
                 var name = row.Name.ExtractText();
                 if (!string.IsNullOrEmpty(name))
@@ -258,13 +262,26 @@ public sealed class LuminaResolver : IDisposable
     }
 
     /// <summary>
+    ///     Erkennt Glamourers "Nothing"-Sentinel für Equipment-Slots.
+    /// </summary>
+    /// <remarks>
+    ///     Glamourer berechnet die Sentinel als
+    ///     <c>uint.MaxValue - 128 - (uint)slot.ToSlot()</c>
+    ///     (siehe <c>ItemManager.NothingId</c> in Ottermandias/Glamourer).
+    ///     Damit liegen alle Sentinels in den oberen ~256 Werten von
+    ///     UInt32. Wir prüfen großzügig auf das obere 256er-Fenster.
+    /// </remarks>
+    private static bool IsNothingSentinel(ulong itemId)
+        => itemId is >= uint.MaxValue - 256 and <= uint.MaxValue;
+
+    /// <summary>
     ///     Liefert die Icon-ID eines Items. Erlaubt den Consumer, das
     ///     Item-PNG via <see cref="GetItemIconDataUri"/> nachzuziehen.
     ///     <c>null</c> bei unbekannter Item-ID.
     /// </summary>
     public ushort? GetItemIconId(ulong itemId)
     {
-        if (itemId == 0)
+        if (itemId == 0 || IsNothingSentinel(itemId))
             return null;
 
         // Gleiche ID-Normierung wie in GetItemName — HQ zurück auf Base,
@@ -370,10 +387,15 @@ public sealed class LuminaResolver : IDisposable
         try
         {
             var shared = _textureProvider.GetFromGameIcon(new GameIconLookup(iconId));
-            using var cts = new CancellationTokenSource(IconFetchTimeout);
-            var wrap = shared.RentAsync(cts.Token).GetAwaiter().GetResult();
+            // Getrennte CTS für Rent und Save: bei vielen parallelen
+            // Warm-Up-Aufrufen kann RentAsync den Großteil der Zeit
+            // verbrauchen; ein gemeinsames Token würde SaveToStream
+            // dann sofort abbrechen, obwohl die Textur längst da ist.
+            using var rentCts = new CancellationTokenSource(IconFetchTimeout);
+            var wrap = shared.RentAsync(rentCts.Token).GetAwaiter().GetResult();
             try
             {
+                using var saveCts = new CancellationTokenSource(IconFetchTimeout);
                 using var ms = new MemoryStream();
                 _readback
                     .SaveToStreamAsync(
@@ -383,7 +405,7 @@ public sealed class LuminaResolver : IDisposable
                         props: null,
                         leaveWrapOpen: true,
                         leaveStreamOpen: true,
-                        cts.Token)
+                        saveCts.Token)
                     .GetAwaiter().GetResult();
 
                 return $"data:image/png;base64,{Convert.ToBase64String(ms.ToArray())}";

@@ -252,7 +252,7 @@ public sealed record GlamourerEquipmentSlot
 public sealed record GlamourerBonusItem
 {
     public required string SlotName { get; init; }
-    public required uint BonusId { get; init; }
+    public required ulong BonusId { get; init; }
     public required string ItemName { get; init; }
     public required bool Apply { get; init; }
 }

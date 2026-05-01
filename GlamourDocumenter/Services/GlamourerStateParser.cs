@@ -452,7 +452,14 @@ public sealed class GlamourerStateParser
                 if (prop.Value is not JObject obj)
                     continue;
 
-                var bonusId = obj["BonusId"]?.Value<uint>() ?? 0;
+                // BonusId ist ein gepacktes CustomItemId-ulong (siehe
+                // Penumbra.GameData IdTypes.CustomItemId): Bits 0..15 = Model
+                // (= eigentliche BonusItemId), Bits 16..23 Variant, Bits
+                // 24..31 Slot, Bits 48/49 Custom-/BonusItemFlag. Die
+                // Empty-Sentinel BonusItemNothing setzt Model=0 und alle
+                // Flag-Bits — der ulong übersteigt UInt32.MaxValue, daher
+                // muss hier zwingend ulong gelesen werden.
+                var bonusId = obj["BonusId"]?.Value<ulong>() ?? 0UL;
                 var apply = obj["Apply"]?.Value<bool>() ?? false;
 
                 list.Add(new GlamourerBonusItem
@@ -460,7 +467,7 @@ public sealed class GlamourerStateParser
                     SlotName = prop.Name,
                     BonusId = bonusId,
                     ItemName = _lumina.GetBonusItemName(bonusId) ??
-                               (bonusId == 0 ? "Nothing" : $"Unknown (id={bonusId})"),
+                               $"Unknown (id={bonusId})",
                     Apply = apply,
                 });
             }

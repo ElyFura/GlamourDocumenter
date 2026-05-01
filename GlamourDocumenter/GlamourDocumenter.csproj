@@ -1,32 +1,11 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
 
-  <!--
-    ====================================================================
-    GlamourDocumenter.csproj
-
-    Dalamud-Plugin für FFXIV. Nutzt die offizielle Dalamud.NET.Sdk —
-    diese liefert TargetFramework, alle Standard-Refs (Dalamud,
-    Dalamud.Bindings.ImGui, FFXIVClientStructs, Lumina, Lumina.Excel,
-    Newtonsoft.Json) und den DalamudPackager-MSBuild-Task. Damit
-    entfallen die früher hartkodierten <Reference HintPath>-Pfade auf
-    %AppData%\XIVLauncher\addon\Hooks\dev — der Build ist jetzt auf
-    jeder Maschine reproduzierbar.
-
-    Siehe: https://dalamud.dev/plugin-development/how-tos/v12-SDK-migration
-    Sample: https://github.com/goatcorp/SamplePlugin
-    ====================================================================
-  -->
-
   <PropertyGroup>
-    <Version>0.1.2.2</Version>
+    <Version>0.1.2.3</Version>
     <PackageProjectUrl>https://github.com/ElyFura/GlamourDocumenter</PackageProjectUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <IsPackable>false</IsPackable>
 
-    <!--
-      Code-Stil-Defaults; alles andere (TargetFramework, Platform,
-      Nullable usw.) zieht die SDK selbst.
-    -->
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
