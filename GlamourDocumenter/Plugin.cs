@@ -75,6 +75,10 @@ public sealed class Plugin : IDalamudPlugin
         // aus der Config wollen, sind sie damit schon da.
         Config = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
 
+        // Sprache ins globale Strings-Modul übernehmen, bevor irgendein
+        // UI- oder Export-Code Texte rendert.
+        Strings.Current = Config.Language;
+
         // IPC-Wrapper. Reihenfolge egal, aber Collector kommt danach.
         _penumbra = new PenumbraIpc(PluginInterface, Log);
         _glamourer = new GlamourerIpc(PluginInterface, Log);

@@ -3,11 +3,21 @@
 //
 //  Menschenlesbarer Export. Ziel: Dokument zum Archivieren, Teilen oder
 //  ins Wiki ziehen. Kein Re-Import.
+//
+//  Alle benutzersichtbaren Texte laufen über <see cref="Strings"/>, damit
+//  ein Sprachwechsel im Settings-Tab den Markdown-Output und damit auch
+//  die HTML-Variante (die auf MarkdownExporter aufsetzt) sofort umschaltet.
+//
+//  Markenbezeichner (Penumbra / Glamourer / Customize+) bleiben Wort-
+//  identisch in beiden Sprachen — der HtmlExporter-Post-Processor erkennt
+//  Sektionen per exact-match auf diese Strings.
 // ==========================================================================
 
+using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 using GlamourDocumenter.Models;
+using GlamourDocumenter.Services;
 
 namespace GlamourDocumenter.Exporters;
 
@@ -41,13 +51,10 @@ public sealed class MarkdownExporter : IDocumentExporter
 
     private static void RenderHeader(StringBuilder sb, DocumentationExport export)
     {
-        sb.AppendLine("# Glamour Documenter Export");
+        sb.Append("# ").AppendLine(Strings.MdHeaderTitle);
         sb.AppendLine();
-        sb.Append("_Erstellt am ")
-          .Append(export.ExportedAt.ToString("yyyy-MM-dd HH:mm:ss zzz", CultureInfo.InvariantCulture))
-          .Append(" mit Plugin-Version ")
-          .Append(export.PluginVersion)
-          .AppendLine("._");
+        var ts = export.ExportedAt.ToString("yyyy-MM-dd HH:mm:ss zzz", CultureInfo.InvariantCulture);
+        sb.Append('_').Append(Strings.MdCreatedWith(ts, export.PluginVersion)).AppendLine("_");
         sb.AppendLine();
     }
 
@@ -66,9 +73,9 @@ public sealed class MarkdownExporter : IDocumentExporter
 
         if (export.Penumbra is { } pen)
         {
-            sb.Append("- **Aktive Mods:** ")
+            sb.Append("- **").Append(Strings.MdActiveMods).Append(":** ")
               .Append(pen.Mods.Count.ToString(CultureInfo.InvariantCulture))
-              .Append(" (Collection „")
+              .Append(" (").Append(Strings.MdCollectionLabel).Append(" „")
               .Append(pen.CollectionName)
               .AppendLine("“)");
             anyLine = true;
@@ -78,11 +85,10 @@ public sealed class MarkdownExporter : IDocumentExporter
         {
             var slots = glam.Equipment?.Count ?? 0;
             var bonus = glam.Bonus?.Count ?? 0;
-            sb.Append("- **Glamourer:** ")
-              .Append(slots.ToString(CultureInfo.InvariantCulture))
-              .Append(" Equipment-Slots, ")
-              .Append(bonus.ToString(CultureInfo.InvariantCulture))
-              .AppendLine(" Bonus-Items");
+            sb.Append("- **").Append(Strings.MdGlamourerSummary).Append(":** ")
+              .Append(Strings.MdEquipmentSlotsSuffix(slots))
+              .Append(", ")
+              .AppendLine(Strings.MdBonusItemsSuffix(bonus));
             anyLine = true;
         }
 
@@ -90,13 +96,16 @@ public sealed class MarkdownExporter : IDocumentExporter
         {
             var profiles = cplus.AllProfiles.Count;
             var activeTxt = cplus.ActiveProfile is not null
-                ? $"aktives Profil „{cplus.ActiveProfile.Name}"
-                : "kein aktives Profil";
+                ? Strings.MdActiveProfileSummary(cplus.ActiveProfile.Name)
+                : Strings.MdNoActiveProfileSummary;
+            // Wenn ein aktives Profil benannt ist, schließen wir die
+            // Anführungszeichen hier — sonst lassen wir's neutral.
+            var closingQuote = cplus.ActiveProfile is not null ? "“" : "";
             sb.Append("- **Customize+:** ")
               .Append(activeTxt)
-              .Append("“, ")
-              .Append(profiles.ToString(CultureInfo.InvariantCulture))
-              .AppendLine(" Profile verfügbar");
+              .Append(closingQuote)
+              .Append(", ")
+              .AppendLine(Strings.MdProfilesAvailable(profiles));
             anyLine = true;
         }
 
@@ -106,65 +115,72 @@ public sealed class MarkdownExporter : IDocumentExporter
 
     private static void RenderCharacter(StringBuilder sb, CharacterInfo character)
     {
-        sb.AppendLine("## Charakter");
+        sb.Append("## ").AppendLine(Strings.MdCharacter);
         sb.AppendLine();
-        sb.Append("- **Name:** ").AppendLine(character.Name);
-        sb.Append("- **Welt:** ").AppendLine(character.HomeWorld);
+        sb.Append("- **").Append(Strings.MdName).Append(":** ").AppendLine(character.Name);
+        sb.Append("- **").Append(Strings.MdWorld).Append(":** ").AppendLine(character.HomeWorld);
 
         // Job-Zeile: optional mit Icon-Marker vorweg (HtmlExporter
         // expandiert ihn zum <img>; MarkdownViewer ignoriert HTML-
         // Kommentare).
-        sb.Append("- **Job:** ");
+        sb.Append("- **").Append(Strings.MdJob).Append(":** ");
         if (!string.IsNullOrEmpty(character.JobIconDataUri))
             sb.Append("<!--gdoc-icon:").Append(character.JobIconDataUri).Append("-->");
-        sb.Append(character.Job).Append(" (Lv ").Append(character.Level).AppendLine(")");
+        sb.Append(character.Job).Append(" (").Append(Strings.MdLevelAbbr).Append(' ')
+          .Append(character.Level).AppendLine(")");
         sb.AppendLine();
     }
 
     private static void RenderPenumbra(StringBuilder sb, PenumbraExport? penumbra)
     {
+        // Brand-Name "Penumbra" bleibt in beiden Sprachen identisch — der
+        // HtmlExporter erkennt die Sektion per exact-match.
         sb.AppendLine("## Penumbra");
         sb.AppendLine();
 
         if (penumbra is null)
         {
-            sb.AppendLine("_Penumbra nicht verfügbar oder nicht aktiv._");
+            sb.Append('_').Append(Strings.MdPenumbraNotAvail).AppendLine("_");
             sb.AppendLine();
             return;
         }
 
-        sb.Append("**Collection:** ").Append(penumbra.CollectionName)
+        sb.Append("**").Append(Strings.MdCollectionLabel).Append(":** ")
+          .Append(penumbra.CollectionName)
           .Append(" (`").Append(penumbra.CollectionId).AppendLine("`)");
         sb.AppendLine();
 
         if (penumbra.Mods.Count == 0)
         {
-            sb.AppendLine("_Keine wirksamen Mods in dieser Collection._");
+            sb.Append('_').Append(Strings.MdNoEffectiveMods).AppendLine("_");
             sb.AppendLine();
             return;
         }
 
-        sb.AppendLine("### Mods");
+        sb.Append("### ").AppendLine(Strings.MdMods);
         sb.AppendLine();
 
         foreach (var mod in penumbra.Mods)
         {
-            var state = mod.Enabled ? "aktiv" : "inaktiv";
-            var inherited = mod.Inherited ? " (vererbt)" : "";
+            var state = mod.Enabled ? Strings.MdActive : Strings.MdInactive;
+            var inherited = mod.Inherited ? $" ({Strings.MdInherited})" : "";
             sb.Append("#### ").Append(mod.ModName).AppendLine();
-            sb.Append("- **Verzeichnis:** `").Append(mod.ModDirectory).AppendLine("`");
-            sb.Append("- **Status:** ").Append(state).Append(inherited).AppendLine();
-            sb.Append("- **Priorität:** ").Append(mod.Priority).AppendLine();
+            sb.Append("- **").Append(Strings.MdDirectory).Append(":** `")
+              .Append(mod.ModDirectory).AppendLine("`");
+            sb.Append("- **").Append(Strings.MdStatus).Append(":** ")
+              .Append(state).Append(inherited).AppendLine();
+            sb.Append("- **").Append(Strings.MdPriority).Append(":** ")
+              .Append(mod.Priority).AppendLine();
 
             if (mod.Settings.Count > 0)
             {
-                sb.AppendLine("- **Optionen:**");
+                sb.Append("- **").Append(Strings.MdOptions).AppendLine(":**");
                 foreach (var setting in mod.Settings)
                 {
                     sb.Append("  - `").Append(setting.Key).Append("`: ");
                     if (setting.Value.Count == 0)
                     {
-                        sb.AppendLine("_(keine)_");
+                        sb.Append('_').Append(Strings.MdNone).AppendLine("_");
                     }
                     else
                     {
@@ -179,12 +195,13 @@ public sealed class MarkdownExporter : IDocumentExporter
 
     private static void RenderGlamourer(StringBuilder sb, GlamourerExport? glamourer)
     {
+        // Brand-Name — identisch in beiden Sprachen.
         sb.AppendLine("## Glamourer");
         sb.AppendLine();
 
         if (glamourer is null)
         {
-            sb.AppendLine("_Glamourer nicht verfügbar oder kein State vorhanden._");
+            sb.Append('_').Append(Strings.MdGlamourerNotAvail).AppendLine("_");
             sb.AppendLine();
             return;
         }
@@ -201,7 +218,7 @@ public sealed class MarkdownExporter : IDocumentExporter
         // strukturiert ausgeben konnten.
         if (!string.IsNullOrEmpty(glamourer.StateBase64))
         {
-            sb.AppendLine("### Re-Import-Blob (Base64)");
+            sb.Append("### ").AppendLine(Strings.MdReimportBlob);
             sb.AppendLine();
             sb.AppendLine("```");
             sb.AppendLine(glamourer.StateBase64);
@@ -211,7 +228,7 @@ public sealed class MarkdownExporter : IDocumentExporter
 
         if (!string.IsNullOrEmpty(glamourer.StateJson))
         {
-            sb.AppendLine("### Vollständiger State (nativ, JSON)");
+            sb.Append("### ").AppendLine(Strings.MdFullStateJson);
             sb.AppendLine();
             sb.AppendLine("```json");
             sb.AppendLine(glamourer.StateJson);
@@ -225,13 +242,15 @@ public sealed class MarkdownExporter : IDocumentExporter
         if (customize is null)
             return;
 
-        sb.AppendLine("### Customize");
+        sb.Append("### ").AppendLine(Strings.MdCustomize);
         sb.AppendLine();
-        sb.Append("- **ModelId:** ").AppendLine(customize.ModelId.ToString(CultureInfo.InvariantCulture));
+        sb.Append("- **").Append(Strings.MdModelId).Append(":** ")
+          .AppendLine(customize.ModelId.ToString(CultureInfo.InvariantCulture));
         if (customize.Wetness.HasValue)
         {
-            var applySuffix = customize.WetnessApply == true ? "" : " _(nicht angewendet)_";
-            sb.Append("- **Force Wetness:** ").Append(customize.Wetness.Value ? "ja" : "nein")
+            var applySuffix = customize.WetnessApply == true ? "" : $" _{Strings.MdNotApplied}_";
+            sb.Append("- **").Append(Strings.MdForceWetness).Append(":** ")
+              .Append(customize.Wetness.Value ? Strings.MdYes : Strings.MdNo)
               .AppendLine(applySuffix);
         }
         sb.AppendLine();
@@ -239,14 +258,16 @@ public sealed class MarkdownExporter : IDocumentExporter
         if (customize.Fields.Count == 0)
             return;
 
-        sb.AppendLine("| Feld | Wert | Angewendet |");
+        sb.Append("| ").Append(Strings.MdField)
+          .Append(" | ").Append(Strings.MdValue)
+          .Append(" | ").Append(Strings.MdAppliedColumn).AppendLine(" |");
         sb.AppendLine("|------|------|------------|");
         foreach (var field in customize.Fields)
         {
             var value = field.DisplayValue;
             // Wenn Auflösung und Rohwert unterschiedlich sind, beides
             // zeigen — die Raw-ID ist für Re-Import und Bug-Reports nützlich.
-            if (!string.Equals(value, field.RawValue, StringComparison.Ordinal))
+            if (!string.Equals(value, field.RawValue, System.StringComparison.Ordinal))
                 value = $"{field.DisplayValue} ({field.RawValue})";
 
             sb.Append("| ").Append(field.Name)
@@ -263,16 +284,19 @@ public sealed class MarkdownExporter : IDocumentExporter
         if (equipment is null || equipment.Count == 0)
             return;
 
-        sb.AppendLine("### Equipment");
+        sb.Append("### ").AppendLine(Strings.MdEquipment);
         sb.AppendLine();
-        sb.AppendLine("| Slot | Item | Dye 1 | Dye 2 | Crest | Apply |");
+        sb.Append("| ").Append(Strings.MdSlot)
+          .Append(" | ").Append(Strings.MdItem)
+          .Append(" | Dye 1 | Dye 2 | ").Append(Strings.MdCrest)
+          .Append(" | ").Append(Strings.MdApply).AppendLine(" |");
         sb.AppendLine("|------|------|-------|-------|-------|-------|");
         foreach (var slot in equipment)
         {
             var dye1 = FormatDye(slot.Stain1, slot.Stain1Name, slot.Stain1Hex, slot.ApplyStain);
             var dye2 = FormatDye(slot.Stain2, slot.Stain2Name, slot.Stain2Hex, slot.ApplyStain);
             var crest = slot.Crest
-                ? (slot.ApplyCrest ? "✓" : "✓ _(nicht angew.)_")
+                ? (slot.ApplyCrest ? "✓" : $"✓ _{Strings.MdNotAppliedShort}_")
                 : "—";
 
             // Item-Zellen-Inhalt: optional Icon-Marker (HTML-Kommentar,
@@ -302,7 +326,7 @@ public sealed class MarkdownExporter : IDocumentExporter
         // Swatch-Marker vor dem Namen: unsichtbar im Markdown, im HTML
         // zum Farbquadrat expandiert.
         var prefix = hex is not null ? $"<!--gdoc-swatch:{hex}-->" : string.Empty;
-        return applied ? $"{prefix}{label}" : $"{prefix}{label} _(nicht angew.)_";
+        return applied ? $"{prefix}{label}" : $"{prefix}{label} _{Strings.MdNotAppliedShort}_";
     }
 
     private static void RenderGlamourerMetaFlags(StringBuilder sb, GlamourerMetaFlags? flags)
@@ -315,12 +339,12 @@ public sealed class MarkdownExporter : IDocumentExporter
         if (!any)
             return;
 
-        sb.AppendLine("### Sichtbarkeits-Toggles");
+        sb.Append("### ").AppendLine(Strings.MdVisibilityToggles);
         sb.AppendLine();
-        AppendFlag(sb, "Hat sichtbar", flags.HatVisible, flags.HatApply);
-        AppendFlag(sb, "Viera-Ohren sichtbar", flags.VieraEarsVisible, flags.VieraEarsApply);
-        AppendFlag(sb, "Visor offen", flags.VisorToggled, flags.VisorApply);
-        AppendFlag(sb, "Waffe sichtbar", flags.WeaponVisible, flags.WeaponApply);
+        AppendFlag(sb, Strings.MdHatVisible, flags.HatVisible, flags.HatApply);
+        AppendFlag(sb, Strings.MdVieraEarsVisible, flags.VieraEarsVisible, flags.VieraEarsApply);
+        AppendFlag(sb, Strings.MdVisorOpen, flags.VisorToggled, flags.VisorApply);
+        AppendFlag(sb, Strings.MdWeaponVisible, flags.WeaponVisible, flags.WeaponApply);
         sb.AppendLine();
     }
 
@@ -328,9 +352,9 @@ public sealed class MarkdownExporter : IDocumentExporter
     {
         if (!value.HasValue)
             return;
-        var applySuffix = apply == true ? "" : " _(nicht angewendet)_";
+        var applySuffix = apply == true ? "" : $" _{Strings.MdNotApplied}_";
         sb.Append("- **").Append(label).Append(":** ")
-          .Append(value.Value ? "ja" : "nein")
+          .Append(value.Value ? Strings.MdYes : Strings.MdNo)
           .AppendLine(applySuffix);
     }
 
@@ -339,9 +363,11 @@ public sealed class MarkdownExporter : IDocumentExporter
         if (bonus is null || bonus.Count == 0)
             return;
 
-        sb.AppendLine("### Bonus-Slots");
+        sb.Append("### ").AppendLine(Strings.MdBonusSlots);
         sb.AppendLine();
-        sb.AppendLine("| Slot | Item | Apply |");
+        sb.Append("| ").Append(Strings.MdSlot)
+          .Append(" | ").Append(Strings.MdItem)
+          .Append(" | ").Append(Strings.MdApply).AppendLine(" |");
         sb.AppendLine("|------|------|-------|");
         foreach (var item in bonus)
         {
@@ -361,9 +387,11 @@ public sealed class MarkdownExporter : IDocumentExporter
 
         // Section-Name exakt wie in Glamourer-UI (Panel-Überschrift im
         // Character-Editor).
-        sb.AppendLine("### Advanced Customization");
+        sb.Append("### ").AppendLine(Strings.MdAdvancedCustomization);
         sb.AppendLine();
-        sb.AppendLine("| Parameter | Wert | Apply |");
+        sb.Append("| ").Append(Strings.MdParameter)
+          .Append(" | ").Append(Strings.MdValue)
+          .Append(" | ").Append(Strings.MdApply).AppendLine(" |");
         sb.AppendLine("|-----------|------|-------|");
         foreach (var p in parameters)
         {
@@ -381,7 +409,7 @@ public sealed class MarkdownExporter : IDocumentExporter
         if (materials is null || materials.Count == 0)
             return;
 
-        sb.AppendLine("### Advanced Dyes (Materials)");
+        sb.Append("### ").AppendLine(Strings.MdAdvancedDyes);
         sb.AppendLine();
         foreach (var kv in materials)
         {
@@ -396,19 +424,16 @@ public sealed class MarkdownExporter : IDocumentExporter
         if (designs is null || designs.Count == 0)
             return;
 
-        sb.Append("### Designs (")
-          .Append(designs.Count.ToString(CultureInfo.InvariantCulture))
-          .AppendLine(")");
+        sb.Append("### ").AppendLine(Strings.MdDesigns(designs.Count));
         sb.AppendLine();
-        sb.AppendLine(
-            "_Gespeicherte Glamourer-Designs als Backup. Der Blob ist das " +
-            "native Re-Import-Format — in Glamourer unter „Designs“ einfügen._");
+        sb.Append('_').Append(Strings.MdDesignsHint).AppendLine("_");
         sb.AppendLine();
 
         foreach (var design in designs)
         {
             sb.Append("#### ").AppendLine(design.Name);
-            sb.Append("- **Id:** `").Append(design.Id).AppendLine("`");
+            sb.Append("- **").Append(Strings.MdId).Append(":** `")
+              .Append(design.Id).AppendLine("`");
             sb.AppendLine("```");
             sb.AppendLine(design.Base64);
             sb.AppendLine("```");
@@ -424,22 +449,24 @@ public sealed class MarkdownExporter : IDocumentExporter
 
     private static void RenderCustomizePlus(StringBuilder sb, CustomizePlusExport? customizePlus)
     {
+        // Brand-Name "Customize+" — identisch in beiden Sprachen.
         sb.AppendLine("## Customize+");
         sb.AppendLine();
 
         if (customizePlus is null)
         {
-            sb.AppendLine("_Customize+ nicht verfügbar._");
+            sb.Append('_').Append(Strings.MdCustomizePlusNotAvail).AppendLine("_");
             sb.AppendLine();
             return;
         }
 
         if (customizePlus.ActiveProfile is { } active)
         {
-            sb.AppendLine("### Aktives Profil");
+            sb.Append("### ").AppendLine(Strings.MdActiveProfileSection);
             sb.AppendLine();
-            sb.Append("- **Name:** ").AppendLine(active.Name);
-            sb.Append("- **UniqueId:** `").Append(active.UniqueId).AppendLine("`");
+            sb.Append("- **").Append(Strings.MdName).Append(":** ").AppendLine(active.Name);
+            sb.Append("- **").Append(Strings.MdUniqueId).Append(":** `")
+              .Append(active.UniqueId).AppendLine("`");
             sb.AppendLine();
             sb.AppendLine("```json");
             sb.AppendLine(active.Template);
@@ -448,17 +475,17 @@ public sealed class MarkdownExporter : IDocumentExporter
         }
         else
         {
-            sb.AppendLine("_Kein aktives Profil auf diesem Charakter._");
+            sb.Append('_').Append(Strings.MdNoActiveProfileSection).AppendLine("_");
             sb.AppendLine();
         }
 
         if (customizePlus.AllProfiles.Count > 0)
         {
-            sb.AppendLine("### Alle Profile");
+            sb.Append("### ").AppendLine(Strings.MdAllProfiles);
             sb.AppendLine();
             foreach (var profile in customizePlus.AllProfiles)
             {
-                var state = profile.IsEnabled ? "aktiviert" : "deaktiviert";
+                var state = profile.IsEnabled ? Strings.MdEnabled : Strings.MdDisabled;
                 sb.Append("- **").Append(profile.Name).Append("** (")
                   .Append(state).Append(") — `")
                   .Append(profile.UniqueId).AppendLine("`");

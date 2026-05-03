@@ -87,4 +87,21 @@ public sealed class Configuration : IPluginConfiguration
     ///     bei Bedarf). Erfordert <c>git.exe</c> im PATH. Default aus.
     /// </summary>
     public bool GitAutoCommit { get; set; } = false;
+
+    /// <summary>
+    ///     Sprache der UI- und Export-Texte. Default: Deutsch (Plugin
+    ///     wurde primär für deutschen User gebaut). Wird beim Plugin-Start
+    ///     in <see cref="GlamourDocumenter.Services.Strings.Current"/>
+    ///     geschrieben und vom UI-Sprach-Picker live umgeschaltet.
+    /// </summary>
+    public Language Language { get; set; } = Language.German;
+}
+
+/// <summary>
+///     Unterstützte UI-/Export-Sprachen.
+/// </summary>
+public enum Language
+{
+    German = 0,
+    English = 1,
 }

@@ -15,6 +15,8 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Numerics;
+using System.Threading;
+using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Objects.SubKinds;
 using Dalamud.Interface.Windowing;
@@ -55,6 +57,18 @@ public sealed class MainWindow : Window, IDisposable
     private DocumentationExport? _lastExport;
     private string? _lastRenderedPath;
     private string _statusMessage = string.Empty;
+
+    /// <summary>
+    ///     Läuft gerade ein Hintergrund-Collect? Verhindert Doppel-Klicks
+    ///     und treibt das deaktivierte Button-Rendering.
+    /// </summary>
+    /// <remarks>
+    ///     <c>volatile</c>-Semantik via <see cref="Volatile"/>-Reads in
+    ///     der Draw-Schleife wäre overkill — der Worker-Task setzt das
+    ///     Flag genau einmal beim Abschluss, und ImGui pollt jeden Frame
+    ///     ohnehin neu.
+    /// </remarks>
+    private bool _collectInFlight;
 
     // Preview-Cache. Re-Render passiert nur, wenn sich Export oder
     // Exporter-Auswahl ändern — sonst würden wir bei jedem ImGui-Frame
@@ -115,31 +129,31 @@ public sealed class MainWindow : Window, IDisposable
         // Der Export ist daher explizit auf den LocalPlayer fokussiert.
         if (ImGui.BeginTabBar("##gdoc-tabs"))
         {
-            if (ImGui.BeginTabItem("Export"))
+            if (ImGui.BeginTabItem(Strings.TabExport))
             {
                 DrawExportTab();
                 ImGui.EndTabItem();
             }
 
-            if (ImGui.BeginTabItem("Historie"))
+            if (ImGui.BeginTabItem(Strings.TabHistory))
             {
                 DrawHistoryTab();
                 ImGui.EndTabItem();
             }
 
-            if (ImGui.BeginTabItem("Re-Import"))
+            if (ImGui.BeginTabItem(Strings.TabImport))
             {
                 DrawImportTab();
                 ImGui.EndTabItem();
             }
 
-            if (ImGui.BeginTabItem("Einstellungen"))
+            if (ImGui.BeginTabItem(Strings.TabSettings))
             {
                 DrawSettingsTab();
                 ImGui.EndTabItem();
             }
 
-            if (ImGui.BeginTabItem("Info"))
+            if (ImGui.BeginTabItem(Strings.TabInfo))
             {
                 DrawInfoTab();
                 ImGui.EndTabItem();
@@ -160,7 +174,7 @@ public sealed class MainWindow : Window, IDisposable
 
     private void DrawExporterSelection()
     {
-        ImGui.Text("Format:");
+        ImGui.Text(Strings.FormatLabel);
         for (var i = 0; i < _exporters.Count; i++)
         {
             ImGui.SameLine();
@@ -175,8 +189,14 @@ public sealed class MainWindow : Window, IDisposable
 
     private void DrawActions()
     {
-        if (ImGui.Button("Daten sammeln"))
+        if (_collectInFlight)
+            ImGui.BeginDisabled();
+
+        if (ImGui.Button(_collectInFlight ? Strings.CollectingButton : Strings.CollectButton))
             CollectSafely();
+
+        if (_collectInFlight)
+            ImGui.EndDisabled();
 
         ImGui.SameLine();
 
@@ -187,7 +207,7 @@ public sealed class MainWindow : Window, IDisposable
         if (noData)
             ImGui.BeginDisabled();
 
-        if (ImGui.Button("In Datei speichern"))
+        if (ImGui.Button(Strings.SaveToFile))
             WriteSafely();
 
         if (noData)
@@ -198,7 +218,7 @@ public sealed class MainWindow : Window, IDisposable
         if (!string.IsNullOrEmpty(_lastRenderedPath))
         {
             ImGui.SameLine();
-            if (ImGui.Button("Ordner öffnen"))
+            if (ImGui.Button(Strings.OpenFolder))
                 OpenExportFolder();
         }
 
@@ -212,21 +232,19 @@ public sealed class MainWindow : Window, IDisposable
     {
         if (_lastExport is null)
         {
-            ImGui.TextWrapped(
-                "Noch kein Export gesammelt. Klick auf „Daten sammeln“, " +
-                "um den aktuellen Charakter auszulesen.");
+            ImGui.TextWrapped(Strings.NoExportYet);
             return;
         }
 
         var exporter = _exporters[_selectedExporterIndex];
         EnsurePreview(exporter);
 
-        ImGui.TextUnformatted($"Vorschau ({exporter.DisplayName})");
+        ImGui.TextUnformatted(Strings.PreviewLabel(exporter.DisplayName));
         ImGui.SameLine();
-        if (ImGui.Button("In Zwischenablage kopieren"))
+        if (ImGui.Button(Strings.CopyToClipboard))
         {
             ImGui.SetClipboardText(_previewCache);
-            _statusMessage = "Vorschau in Zwischenablage kopiert.";
+            _statusMessage = Strings.PreviewCopied;
         }
 
         // InputTextMultiline mit ReadOnly-Flag statt TextUnformatted:
@@ -272,38 +290,64 @@ public sealed class MainWindow : Window, IDisposable
         catch (Exception ex)
         {
             _log.Error(ex, "[GlamourDocumenter] Preview-Render fehlgeschlagen.");
-            _previewCache = $"Fehler beim Rendern: {ex.Message}";
+            _previewCache = Strings.RenderError(ex.Message);
         }
     }
 
     private void CollectSafely()
     {
-        try
-        {
-            var player = _objectTable.LocalPlayer;
-            if (player is null)
-            {
-                _lastExport = null;
-                _statusMessage = "Kein LocalPlayer — Login/Charakter-Auswahl nötig.";
-                return;
-            }
+        // Re-Entry-Schutz: kein zweiter Collect, solange der erste läuft.
+        if (_collectInFlight)
+            return;
 
-            var exp = _collector.Collect(
-                player,
-                _config.OnlyNonDefaultMods,
-                _config.IncludeGlamourerDesigns);
-            // Config-Toggles auf den frisch gebauten Export mappen, damit
-            // Exporter stateless bleiben können (Collector kennt die
-            // Config nicht).
-            _lastExport = exp with { IncludeStatsHeader = _config.IncludeStatsHeader };
-            _statusMessage = "Daten gesammelt.";
-        }
-        catch (Exception ex)
+        var player = _objectTable.LocalPlayer;
+        if (player is null)
         {
-            _log.Error(ex, "[GlamourDocumenter] Collect fehlgeschlagen.");
             _lastExport = null;
-            _statusMessage = $"Fehler beim Sammeln: {ex.Message}";
+            _statusMessage = Strings.NoLocalPlayer;
+            return;
         }
+
+        // Config-Snapshots, damit der Worker-Task keine Felder von außen
+        // liest und damit ohne weitere Synchronisation auskommt.
+        var onlyNonDefault = _config.OnlyNonDefaultMods;
+        var includeDesigns = _config.IncludeGlamourerDesigns;
+        var includeStatsHeader = _config.IncludeStatsHeader;
+
+        _collectInFlight = true;
+        _statusMessage = Strings.CollectingData;
+
+        // Ausgelagert auf einen Worker-Thread, weil Icon-Fetch via
+        // Dalamuds Texture-Pipeline mehrere Sekunden dauern kann. Wäre
+        // die UI hier blockiert, würde der Framework-Thread nicht
+        // weiterlaufen → Game-Freeze (CLAUDE.md §4.3 sagt nur, dass
+        // ClientState-Reads auf dem FW-Thread *passieren* müssen; Collect
+        // schnappt LocalPlayer einmalig oben und werkelt danach mit IPC,
+        // Lumina-Excel und Texture-Loader — alles thread-safe genug für
+        // einen kurzen Worker-Run).
+        Task.Run(() =>
+        {
+            try
+            {
+                var exp = _collector.Collect(player, onlyNonDefault, includeDesigns);
+                return exp with { IncludeStatsHeader = includeStatsHeader };
+            }
+            catch (Exception ex)
+            {
+                _log.Error(ex, "[GlamourDocumenter] Collect fehlgeschlagen.");
+                return null;
+            }
+        }).ContinueWith(t =>
+        {
+            // Felder-Update auf dem ImGui-Thread ist nicht zwingend nötig
+            // (Draw pollt einfach im nächsten Frame), aber wir wollen die
+            // Schreib-Reihenfolge sauber halten: erst Ergebnis, dann Flag.
+            _lastExport = t.Result;
+            _statusMessage = t.Result is null
+                ? Strings.CollectFailed
+                : Strings.DataCollected;
+            _collectInFlight = false;
+        }, TaskScheduler.Default);
     }
 
     private void WriteSafely()
@@ -331,7 +375,7 @@ public sealed class MainWindow : Window, IDisposable
             File.WriteAllText(path, rendered);
 
             _lastRenderedPath = path;
-            _statusMessage = $"Gespeichert: {path}";
+            _statusMessage = Strings.SavedTo(path);
             _log.Information("[GlamourDocumenter] Export geschrieben: {Path}", path);
 
             TryAutoCommit(targetDir, fileName);
@@ -339,7 +383,7 @@ public sealed class MainWindow : Window, IDisposable
         catch (Exception ex)
         {
             _log.Error(ex, "[GlamourDocumenter] Schreiben fehlgeschlagen.");
-            _statusMessage = $"Fehler beim Speichern: {ex.Message}";
+            _statusMessage = Strings.SaveFailed(ex.Message);
         }
     }
 
@@ -393,7 +437,7 @@ public sealed class MainWindow : Window, IDisposable
         catch (Exception ex)
         {
             _log.Warning(ex, "[GlamourDocumenter] Explorer konnte nicht geöffnet werden.");
-            _statusMessage = $"Ordner-Öffnen fehlgeschlagen: {ex.Message}";
+            _statusMessage = Strings.OpenFolderFailed(ex.Message);
         }
     }
 
@@ -436,11 +480,11 @@ public sealed class MainWindow : Window, IDisposable
             ? _config.ExportFolder
             : _pluginInterface.GetPluginConfigDirectory();
 
-        ImGui.TextWrapped($"Ordner: {targetDir}");
-        if (ImGui.Button("Aktualisieren"))
+        ImGui.TextWrapped(Strings.FolderPrefix(targetDir));
+        if (ImGui.Button(Strings.Refresh))
             RefreshHistory();
         ImGui.SameLine();
-        if (ImGui.Button("Ordner öffnen"))
+        if (ImGui.Button(Strings.OpenFolder))
             OpenHistoryFolder(targetDir);
 
         ImGui.Separator();
@@ -450,7 +494,7 @@ public sealed class MainWindow : Window, IDisposable
 
         if (_historyFiles.Count == 0)
         {
-            ImGui.TextDisabled("Keine Exporte im Ordner.");
+            ImGui.TextDisabled(Strings.NoExportsInFolder);
             return;
         }
 
@@ -458,8 +502,8 @@ public sealed class MainWindow : Window, IDisposable
         var tableFlags = ImGuiTableFlags.Resizable | ImGuiTableFlags.BordersInner;
         if (ImGui.BeginTable("##history", 2, tableFlags))
         {
-            ImGui.TableSetupColumn("Dateien", ImGuiTableColumnFlags.WidthFixed, 240);
-            ImGui.TableSetupColumn("Vorschau", ImGuiTableColumnFlags.WidthStretch);
+            ImGui.TableSetupColumn(Strings.FilesColumn, ImGuiTableColumnFlags.WidthFixed, 240);
+            ImGui.TableSetupColumn(Strings.PreviewColumn, ImGuiTableColumnFlags.WidthStretch);
             ImGui.TableNextRow();
 
             ImGui.TableSetColumnIndex(0);
@@ -490,16 +534,16 @@ public sealed class MainWindow : Window, IDisposable
     {
         if (string.IsNullOrEmpty(_historySelectedPath))
         {
-            ImGui.TextDisabled("Datei auswählen, um die Vorschau zu laden.");
+            ImGui.TextDisabled(Strings.SelectFileToPreview);
             return;
         }
 
         ImGui.TextUnformatted(Path.GetFileName(_historySelectedPath));
         ImGui.SameLine();
-        if (ImGui.Button("Kopieren##history"))
+        if (ImGui.Button($"{Strings.Copy}##history"))
             ImGui.SetClipboardText(_historyPreview);
         ImGui.SameLine();
-        if (ImGui.Button("Löschen##history"))
+        if (ImGui.Button($"{Strings.Delete}##history"))
             DeleteHistoryFile(_historySelectedPath);
 
         var avail = ImGui.GetContentRegionAvail();
@@ -552,7 +596,7 @@ public sealed class MainWindow : Window, IDisposable
         catch (Exception ex)
         {
             _log.Warning(ex, "[GlamourDocumenter] History-Load fehlgeschlagen: {Path}", file.FullName);
-            _historyPreview = $"Fehler beim Laden: {ex.Message}";
+            _historyPreview = Strings.LoadError(ex.Message);
         }
     }
 
@@ -601,7 +645,7 @@ public sealed class MainWindow : Window, IDisposable
 
         var currentLabel = selected is not null
             ? Path.GetFileName(selected)
-            : "(auswählen)";
+            : Strings.SelectPlaceholder;
 
         if (ImGui.BeginCombo($"##file-{label}", currentLabel))
         {
@@ -617,12 +661,7 @@ public sealed class MainWindow : Window, IDisposable
 
     private void DrawImportTab()
     {
-        ImGui.TextWrapped(
-            "Re-Import eines JSON-Exports auf den LocalPlayer. Dry-Run zeigt " +
-            "ohne Schreib-Operationen, was der Apply tun würde. Apply schreibt " +
-            "in die aktuell aktive Penumbra-Collection und setzt den " +
-            "Glamourer-State. Customize+ muss manuell aus dem Template-Block " +
-            "importiert werden.");
+        ImGui.TextWrapped(Strings.ImportInfo);
         ImGui.Separator();
 
         if (_historyFiles.Count == 0)
@@ -634,27 +673,27 @@ public sealed class MainWindow : Window, IDisposable
 
         if (jsonFiles.Count == 0)
         {
-            ImGui.TextDisabled("Keine JSON-Exports vorhanden.");
+            ImGui.TextDisabled(Strings.NoJsonExports);
             return;
         }
 
-        DrawFilePicker("Quelle", jsonFiles, ref _importPath);
+        DrawFilePicker(Strings.SourceLabel, jsonFiles, ref _importPath);
 
         var target = _objectTable.LocalPlayer;
         ImGui.Text(target is null
-            ? "Ziel: (kein LocalPlayer — Login nötig)"
-            : $"Ziel: {target.Name.TextValue}");
+            ? Strings.TargetNoPlayer
+            : Strings.TargetWith(target.Name.TextValue));
 
         ImGui.Separator();
 
         var ready = !string.IsNullOrEmpty(_importPath) && target is not null;
         if (!ready) ImGui.BeginDisabled();
 
-        if (ImGui.Button("Dry-Run"))
+        if (ImGui.Button(Strings.DryRunButton))
             RunImport(dryRun: true);
 
         ImGui.SameLine();
-        if (ImGui.Button("Apply …"))
+        if (ImGui.Button(Strings.ApplyButton))
             _importConfirmOpen = true;
 
         if (!ready) ImGui.EndDisabled();
@@ -664,7 +703,7 @@ public sealed class MainWindow : Window, IDisposable
         if (!string.IsNullOrEmpty(_importResult))
         {
             ImGui.SameLine();
-            if (ImGui.Button("Kopieren##import"))
+            if (ImGui.Button($"{Strings.Copy}##import"))
                 ImGui.SetClipboardText(_importResult);
 
             var avail = ImGui.GetContentRegionAvail();
@@ -689,18 +728,16 @@ public sealed class MainWindow : Window, IDisposable
         var open = true;
         if (ImGui.BeginPopupModal("##import-confirm", ref open, ImGuiWindowFlags.AlwaysAutoResize))
         {
-            ImGui.TextWrapped(
-                "Diese Aktion schreibt in Glamourer und Penumbra. " +
-                "Der aktuelle State wird überschrieben. Fortfahren?");
+            ImGui.TextWrapped(Strings.ImportConfirmText);
             ImGui.Separator();
 
-            if (ImGui.Button("Ja, anwenden"))
+            if (ImGui.Button(Strings.YesApply))
             {
                 RunImport(dryRun: false);
                 ImGui.CloseCurrentPopup();
             }
             ImGui.SameLine();
-            if (ImGui.Button("Abbrechen"))
+            if (ImGui.Button(Strings.Cancel))
                 ImGui.CloseCurrentPopup();
 
             ImGui.EndPopup();
@@ -715,7 +752,7 @@ public sealed class MainWindow : Window, IDisposable
         var target = _objectTable.LocalPlayer;
         if (target is null)
         {
-            _importResult = "Kein LocalPlayer — Login/Charakter-Auswahl nötig.";
+            _importResult = Strings.NoLocalPlayer;
             return;
         }
 
@@ -729,13 +766,13 @@ public sealed class MainWindow : Window, IDisposable
                               PropertyNameCaseInsensitive = true,
                               Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
                           })
-                      ?? throw new InvalidOperationException("Leerer Export.");
+                      ?? throw new InvalidOperationException(Strings.ImportEmpty);
             _importResult = dryRun ? _importer.DryRun(exp, target) : _importer.Apply(exp, target);
         }
         catch (Exception ex)
         {
             _log.Error(ex, "[GlamourDocumenter] Re-Import fehlgeschlagen.");
-            _importResult = $"Fehler: {ex.Message}";
+            _importResult = Strings.ImportError(ex.Message);
         }
     }
 
@@ -745,11 +782,17 @@ public sealed class MainWindow : Window, IDisposable
 
     private void DrawSettingsTab()
     {
-        ImGui.Text("Export-Verhalten");
+        // Sprache zuerst — wenn der User hier umschaltet, alle weiteren
+        // Strings auf dieser Seite werden im nächsten Frame in der neuen
+        // Sprache gerendert.
+        DrawLanguageSelector();
+
+        ImGui.Spacing();
+        ImGui.Text(Strings.SettingsExportBehavior);
         ImGui.Separator();
 
         var includeStats = _config.IncludeStatsHeader;
-        if (ImGui.Checkbox("Summary-Block am Anfang des Reports", ref includeStats))
+        if (ImGui.Checkbox(Strings.SettingsSummaryBlock, ref includeStats))
         {
             _config.IncludeStatsHeader = includeStats;
             TrySaveConfig();
@@ -757,14 +800,14 @@ public sealed class MainWindow : Window, IDisposable
         }
 
         var includeCollection = _config.IncludeCollectionInFilename;
-        if (ImGui.Checkbox("Collection-Name im Dateinamen", ref includeCollection))
+        if (ImGui.Checkbox(Strings.SettingsCollectionInFilename, ref includeCollection))
         {
             _config.IncludeCollectionInFilename = includeCollection;
             TrySaveConfig();
         }
 
         var onlyNonDefault = _config.OnlyNonDefaultMods;
-        if (ImGui.Checkbox("Nur Mods mit vom Default abweichenden Settings", ref onlyNonDefault))
+        if (ImGui.Checkbox(Strings.SettingsOnlyNonDefault, ref onlyNonDefault))
         {
             _config.OnlyNonDefaultMods = onlyNonDefault;
             TrySaveConfig();
@@ -772,29 +815,29 @@ public sealed class MainWindow : Window, IDisposable
         }
 
         var includeDesigns = _config.IncludeGlamourerDesigns;
-        if (ImGui.Checkbox("Glamourer-Designs als Backup mit-exportieren", ref includeDesigns))
+        if (ImGui.Checkbox(Strings.SettingsIncludeDesigns, ref includeDesigns))
         {
             _config.IncludeGlamourerDesigns = includeDesigns;
             TrySaveConfig();
             InvalidatePreview();
         }
-        ImGui.TextDisabled(
-            "Enthält Re-Import-Blob pro Design — bläht den Report auf, wenn " +
-            "viele Designs gespeichert sind.");
+        ImGui.TextDisabled(Strings.SettingsDesignsHint);
 
         ImGui.Spacing();
-        ImGui.Text("Automatisierung");
+        ImGui.Text(Strings.SettingsAutomation);
         ImGui.Separator();
 
         var autoZone = _config.AutoExportOnZoneChange;
-        if (ImGui.Checkbox("Auto-Export bei Zonen-Wechsel", ref autoZone))
+        if (ImGui.Checkbox(Strings.SettingsAutoZone, ref autoZone))
         {
             _config.AutoExportOnZoneChange = autoZone;
             TrySaveConfig();
         }
 
-        ImGui.Text("Auto-Export-Format:");
+        ImGui.Text(Strings.SettingsAutoFormat);
         ImGui.SameLine();
+        // Format-Tokens (md/html/json) bleiben Englisch — sie sind Datei-
+        // Endungen / CLI-Argumente und sprachneutral.
         foreach (var fmt in new[] { "md", "html", "json" })
         {
             if (ImGui.RadioButton(fmt, _config.AutoExportFormat == fmt))
@@ -807,17 +850,17 @@ public sealed class MainWindow : Window, IDisposable
         ImGui.NewLine();
 
         var gitCommit = _config.GitAutoCommit;
-        if (ImGui.Checkbox("Nach Export automatisch git add + commit", ref gitCommit))
+        if (ImGui.Checkbox(Strings.SettingsGitCommit, ref gitCommit))
         {
             _config.GitAutoCommit = gitCommit;
             TrySaveConfig();
         }
-        ImGui.TextDisabled("Erfordert git.exe im PATH. Init des Repos passiert beim ersten Commit.");
+        ImGui.TextDisabled(Strings.SettingsGitHint);
 
         ImGui.Spacing();
-        ImGui.Text("Export-Ordner");
+        ImGui.Text(Strings.SettingsExportFolder);
         ImGui.Separator();
-        ImGui.TextWrapped("Leer = Plugin-Config-Directory.");
+        ImGui.TextWrapped(Strings.SettingsFolderHint);
 
         ImGui.SetNextItemWidth(-1);
         // InputText braucht (label, ref string, int maxLen, flags, callback)
@@ -830,18 +873,60 @@ public sealed class MainWindow : Window, IDisposable
             ImGuiInputTextFlags.None,
             callback: (ImGui.ImGuiInputTextCallbackDelegate?)null);
 
-        if (ImGui.Button("Ordner speichern"))
+        if (ImGui.Button(Strings.SettingsSaveFolder))
         {
             var trimmed = _settingsExportFolderEdit.Trim();
             _config.ExportFolder = string.IsNullOrEmpty(trimmed) ? null : trimmed;
             TrySaveConfig();
         }
         ImGui.SameLine();
-        if (ImGui.Button("Zurücksetzen"))
+        if (ImGui.Button(Strings.SettingsResetFolder))
         {
             _config.ExportFolder = null;
             _settingsExportFolderEdit = string.Empty;
             TrySaveConfig();
+        }
+    }
+
+    /// <summary>
+    ///     Sprach-Combo am Anfang des Settings-Tabs. Wechselt
+    ///     <see cref="Strings.Current"/> sofort und invalidiert die
+    ///     Markdown-Preview, damit der Export-Text in der neuen Sprache
+    ///     neu gerendert wird.
+    /// </summary>
+    private void DrawLanguageSelector()
+    {
+        ImGui.Text($"{Strings.SettingsLanguage}:");
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(160);
+
+        // Reihenfolge muss zur Language-Enum-Reihenfolge passen, weil wir
+        // den Index per (int)-Cast 1:1 hinten an die Config zurückschreiben.
+        var labels = new[] { Strings.SettingsLanguageGerman, Strings.SettingsLanguageEnglish };
+        var current = (int)_config.Language;
+
+        if (ImGui.BeginCombo("##gdoc-lang", labels[current]))
+        {
+            for (var i = 0; i < labels.Length; i++)
+            {
+                var isSel = i == current;
+                if (ImGui.Selectable(labels[i], isSel))
+                {
+                    var lang = (Language)i;
+                    if (lang != _config.Language)
+                    {
+                        _config.Language = lang;
+                        Strings.Current = lang;
+                        TrySaveConfig();
+                        // Preview neu rendern, damit der Markdown-Text
+                        // in der neuen Sprache erscheint.
+                        InvalidatePreview();
+                    }
+                }
+                if (isSel)
+                    ImGui.SetItemDefaultFocus();
+            }
+            ImGui.EndCombo();
         }
     }
 
@@ -861,13 +946,13 @@ public sealed class MainWindow : Window, IDisposable
         var version = System.Reflection.Assembly.GetExecutingAssembly()
                           .GetName().Version?.ToString() ?? "?";
         ImGui.Text($"Glamour Documenter v{version}");
-        ImGui.TextWrapped("Exportiert Penumbra / Glamourer / Customize+ für den aktuellen Charakter.");
+        ImGui.TextWrapped(Strings.InfoTagline);
         ImGui.Separator();
-        ImGui.Text("Commands");
-        ImGui.BulletText("/glamdoc — Fenster öffnen/schließen");
-        ImGui.BulletText("/glamdoc export [md|html|json] — headless exportieren");
+        ImGui.Text(Strings.InfoCommands);
+        ImGui.BulletText(Strings.InfoCmdMain);
+        ImGui.BulletText(Strings.InfoCmdExport);
         ImGui.Separator();
-        ImGui.TextDisabled("Quellcode im Projekt-Ordner, Changelog in CHANGELOG.md.");
+        ImGui.TextDisabled(Strings.InfoChangelog);
     }
 
     /// <summary>

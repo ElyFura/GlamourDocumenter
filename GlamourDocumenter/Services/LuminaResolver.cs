@@ -45,7 +45,29 @@ public sealed class LuminaResolver : IDisposable
     ///     Zugriff lädt Dalamud die Textur von Disk/GPU; danach ist alles
     ///     im Cache und ein paar Millisekunden schnell.
     /// </summary>
-    private static readonly TimeSpan IconFetchTimeout = TimeSpan.FromSeconds(3);
+    /// <remarks>
+    ///     Großzügig dimensioniert, weil Dalamuds GPU-Readback-Queue bei
+    ///     parallelen Anfragen serialisiert: ein Icon, das hinter 20
+    ///     anderen wartet, hat von "Token-Start" bis "tatsächliche
+    ///     Verarbeitung" merkbare Latenz. Die effektive Drosselung
+    ///     übernimmt <see cref="IconFetchConcurrency"/>.
+    /// </remarks>
+    private static readonly TimeSpan IconFetchTimeout = TimeSpan.FromSeconds(15);
+
+    /// <summary>
+    ///     Maximale parallele Icon-Fetches. Dalamuds Texture-Pipeline
+    ///     serialisiert intern; mehr als eine Handvoll gleichzeitiger
+    ///     SaveToStreamAsync-Calls bringen keinen Durchsatz, sondern
+    ///     verursachen nur Cancellation-Stürme.
+    /// </summary>
+    private const int IconFetchConcurrency = 4;
+
+    /// <summary>
+    ///     Drosselt parallele <see cref="FetchIconDataUriUncached"/>-Aufrufe
+    ///     auf <see cref="IconFetchConcurrency"/>. Prozessweit, weil der
+    ///     Engpass die Dalamud-Texture-Pipeline ist, nicht unser Code.
+    /// </summary>
+    private static readonly SemaphoreSlim IconFetchGate = new(IconFetchConcurrency, IconFetchConcurrency);
 
     private readonly IPluginLog _log;
     private readonly IDataManager _dataManager;
@@ -262,17 +284,33 @@ public sealed class LuminaResolver : IDisposable
     }
 
     /// <summary>
-    ///     Erkennt Glamourers "Nothing"-Sentinel für Equipment-Slots.
+    ///     Erkennt Glamourers Sentinel-IDs für leere bzw. Default-Slots.
     /// </summary>
     /// <remarks>
-    ///     Glamourer berechnet die Sentinel als
-    ///     <c>uint.MaxValue - 128 - (uint)slot.ToSlot()</c>
-    ///     (siehe <c>ItemManager.NothingId</c> in Ottermandias/Glamourer).
-    ///     Damit liegen alle Sentinels in den oberen ~256 Werten von
-    ///     UInt32. Wir prüfen großzügig auf das obere 256er-Fenster.
+    ///     Glamourer benutzt drei Sentinel-Familien (alle in
+    ///     <c>Glamourer/Services/ItemManager.cs</c>):
+    ///     <list type="bullet">
+    ///         <item>
+    ///             <c>NothingId(EquipSlot)   = uint.MaxValue - 128 - slotIndex</c>
+    ///             — leerer Equipment-Slot (Hat/Top/Hands/…).
+    ///         </item>
+    ///         <item>
+    ///             <c>SmallclothesId(EquipSlot) = uint.MaxValue - 256 - slotIndex</c>
+    ///             — NPC-Standardunterwäsche (Model 9903).
+    ///         </item>
+    ///         <item>
+    ///             <c>NothingId(FullEquipType) = uint.MaxValue - 384 - typeIndex</c>
+    ///             — leere Waffe / leerer Offhand (waffentyp-spezifisch).
+    ///         </item>
+    ///     </list>
+    ///     EquipSlot zählt unter 16, FullEquipType ebenso überschaubar
+    ///     — wir fangen großzügig die obersten 1024 Werte ab. Damit
+    ///     gehören u. a. ID 4294966911 (Offhand-Nothing, Type 0) und
+    ///     vergleichbare Waffen-Defaults dazu, die zuvor als "Unknown
+    ///     item" gerendert wurden.
     /// </remarks>
     private static bool IsNothingSentinel(ulong itemId)
-        => itemId is >= uint.MaxValue - 256 and <= uint.MaxValue;
+        => itemId is >= uint.MaxValue - 1024 and <= uint.MaxValue;
 
     /// <summary>
     ///     Liefert die Icon-ID eines Items. Erlaubt den Consumer, das
@@ -361,9 +399,13 @@ public sealed class LuminaResolver : IDisposable
 
         try
         {
-            // 15s Gesamt-Timeout für den parallelen Warm-Up ist grosszügig,
-            // fängt aber hängenden Texture-Loader ab.
-            Task.WaitAll(tasks, TimeSpan.FromSeconds(15));
+            // Gesamt-Timeout skaliert mit Icon-Anzahl: pro Concurrency-Slot
+            // im schlimmsten Fall IconFetchTimeout, plus Puffer. Verhindert,
+            // dass viele Items (Equipment+Materia+Job) im Cancellation-
+            // Sturm enden.
+            var batchTimeout = TimeSpan.FromSeconds(
+                Math.Min(60, 15 + todo.Count / IconFetchConcurrency * 2));
+            Task.WaitAll(tasks, batchTimeout);
         }
         catch (Exception ex)
         {
@@ -384,6 +426,12 @@ public sealed class LuminaResolver : IDisposable
     /// </summary>
     private string? FetchIconDataUriUncached(uint iconId)
     {
+        // Drossel: erst rein in den Concurrency-Slot, *dann* erst den
+        // Per-Task-Timeout starten. Sonst läuft das Token schon ab,
+        // während wir noch hinter anderen Icons in der Queue stehen,
+        // und SaveToStreamAsync wirft OperationCanceledException, ohne
+        // dass wir je Compute-Zeit gesehen haben.
+        IconFetchGate.Wait();
         try
         {
             var shared = _textureProvider.GetFromGameIcon(new GameIconLookup(iconId));
@@ -419,6 +467,10 @@ public sealed class LuminaResolver : IDisposable
         {
             _log.Debug(ex, "[GlamourDocumenter] Icon-Fetch fehlgeschlagen (iconId={Id}).", iconId);
             return null;
+        }
+        finally
+        {
+            IconFetchGate.Release();
         }
     }
 

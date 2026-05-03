@@ -47,10 +47,166 @@ public sealed class HtmlExporter : IDocumentExporter
     {
         var markdownBody = _markdown.Render(export);
         var htmlBody = MarkdownToHtml.Convert(markdownBody);
+        htmlBody = WrapCollapsibleSections(htmlBody);
 
         var title = $"Glamour Documenter — {WebUtility.HtmlEncode(export.Character.Name)}";
         return BuildDocument(title, htmlBody);
     }
+
+    /// <summary>
+    ///     H2-Titel, die im HTML-Output zu eingeklappten
+    ///     <c>&lt;details&gt;</c>-Sektionen werden. „Charakter" bleibt
+    ///     bewusst draußen — das sind die generellen Infos, die immer
+    ///     sichtbar sein sollen.
+    /// </summary>
+    private static readonly HashSet<string> CollapsibleSections = new()
+    {
+        "Penumbra",
+        "Glamourer",
+        "Customize+",
+    };
+
+    /// <summary>
+    ///     Wandelt jede H2-Sektion mit einem in
+    ///     <see cref="CollapsibleSections"/> gelisteten Titel in einen
+    ///     <c>&lt;details&gt;</c>-Block um, der standardmäßig zugeklappt
+    ///     ist. Die Sektion endet beim nächsten H2 oder am Body-Ende.
+    /// </summary>
+    /// <remarks>
+    ///     Der MarkdownToHtml-Konverter emittiert Heading-Tags ohne
+    ///     Attribute und ohne verschachtelte Markup im Title — daher
+    ///     reicht eine simple Regex statt eines vollwertigen HTML-Parsers.
+    ///     Innerhalb der bekannten Sektionen werden zusätzlich
+    ///     Unter-Headings eingeklappt (siehe <see cref="WrapHeadingsAtLevel"/>).
+    /// </remarks>
+    private static string WrapCollapsibleSections(string html)
+    {
+        var matches = H2Regex.Matches(html);
+        if (matches.Count == 0)
+            return html;
+
+        var sb = new StringBuilder(html.Length + 512);
+        var lastIndex = 0;
+
+        for (var i = 0; i < matches.Count; i++)
+        {
+            var m = matches[i];
+            // Alles vor dem H2 (Header, Summary-Block, Charakter-Tabelle)
+            // unverändert übernehmen.
+            sb.Append(html, lastIndex, m.Index - lastIndex);
+
+            var rawTitle = m.Groups[1].Value;
+            var decodedTitle = WebUtility.HtmlDecode(rawTitle).Trim();
+
+            // Inner-Range: vom Ende dieses H2 bis zum nächsten H2 (oder
+            // Body-Ende). Die Inner-Slice schließt nachfolgende Inhalte
+            // bis zum nächsten Top-Level-Schnitt ein.
+            var innerStart = m.Index + m.Length;
+            var innerEnd = i + 1 < matches.Count ? matches[i + 1].Index : html.Length;
+            var inner = html.Substring(innerStart, innerEnd - innerStart);
+
+            if (CollapsibleSections.Contains(decodedTitle))
+            {
+                // Pro Sektion eigene Nesting-Regel: Penumbra hat einen
+                // einzigen H3 ("Mods") und darunter pro Mod ein H4 — wir
+                // klappen die H4 ein. Glamourer hat mehrere thematische
+                // H3-Blöcke (Customize, Equipment, …) — die alle.
+                var processedInner = decodedTitle switch
+                {
+                    "Penumbra"   => WrapHeadingsAtLevel(inner, 4),
+                    "Glamourer"  => WrapHeadingsAtLevel(inner, 3),
+                    _            => inner,
+                };
+
+                sb.Append("<details class=\"section\"><summary class=\"h2-summary\">")
+                  .Append(rawTitle)
+                  .AppendLine("</summary>");
+                sb.Append(processedInner);
+                sb.AppendLine("</details>");
+            }
+            else
+            {
+                sb.Append(m.Value);
+                sb.Append(inner);
+            }
+
+            lastIndex = innerEnd;
+        }
+
+        sb.Append(html, lastIndex, html.Length - lastIndex);
+        return sb.ToString();
+    }
+
+    /// <summary>
+    ///     Wickelt jeden Heading der angegebenen Ebene (3 oder 4) im
+    ///     gegebenen HTML-Fragment in ein zugeklapptes
+    ///     <c>&lt;details&gt;</c>. Eine Sub-Sektion läuft vom Heading bis
+    ///     zum nächsten Heading derselben Ebene oder Fragment-Ende.
+    /// </summary>
+    /// <remarks>
+    ///     Inhalte vor dem ersten Heading bleiben unverändert sichtbar
+    ///     (z. B. die <c>**Collection:**</c>-Zeile vor "### Mods" in
+    ///     Penumbra). Nur die einzelnen Heading-Blöcke werden eingeklappt.
+    /// </remarks>
+    private static string WrapHeadingsAtLevel(string innerHtml, int level)
+    {
+        var regex = level == 3 ? H3Regex : H4Regex;
+        var matches = regex.Matches(innerHtml);
+        if (matches.Count == 0)
+            return innerHtml;
+
+        var sb = new StringBuilder(innerHtml.Length + 256);
+        var lastIndex = 0;
+
+        for (var i = 0; i < matches.Count; i++)
+        {
+            var m = matches[i];
+
+            if (i == 0)
+            {
+                // Material vor dem ersten Heading bleibt frei sichtbar.
+                sb.Append(innerHtml, lastIndex, m.Index - lastIndex);
+            }
+            else
+            {
+                // Vorheriges Sub-Details ablassen, dann den Block bis
+                // hierhin als dessen Inhalt anhängen.
+                sb.Append(innerHtml, lastIndex, m.Index - lastIndex);
+                sb.AppendLine("</details>");
+            }
+
+            sb.Append("<details class=\"sub-section\"><summary class=\"h")
+              .Append(level)
+              .Append("-summary\">")
+              .Append(m.Groups[1].Value)
+              .AppendLine("</summary>");
+
+            lastIndex = m.Index + m.Length;
+        }
+
+        // Rest hinter dem letzten Heading ist Inhalt der letzten Sub-Sektion.
+        sb.Append(innerHtml, lastIndex, innerHtml.Length - lastIndex);
+        sb.AppendLine("</details>");
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    ///     Matcht <c>&lt;h2&gt;TITEL&lt;/h2&gt;</c>. MarkdownToHtml setzt
+    ///     keine Attribute und keine verschachtelte Markup im Title, daher
+    ///     reicht der einfache <c>[^&lt;]</c>-Charakter-Set.
+    /// </summary>
+    private static readonly Regex H2Regex = new(
+        @"<h2>([^<]+)</h2>",
+        RegexOptions.Compiled);
+
+    private static readonly Regex H3Regex = new(
+        @"<h3>([^<]+)</h3>",
+        RegexOptions.Compiled);
+
+    private static readonly Regex H4Regex = new(
+        @"<h4>([^<]+)</h4>",
+        RegexOptions.Compiled);
 
     private static string BuildDocument(string title, string body)
     {
@@ -119,6 +275,7 @@ public sealed class HtmlExporter : IDocumentExporter
             --muted: #9898a0;
             --accent: #d4a373;
             --code-bg: #14141a;
+            --code-fg: #d8d8dc;
         }
         [data-theme="light"] {
             color-scheme: light;
@@ -130,6 +287,7 @@ public sealed class HtmlExporter : IDocumentExporter
             --muted: #6c6358;
             --accent: #8a5a30;
             --code-bg: #f4efe6;
+            --code-fg: #2a2620;
         }
         #theme-toggle {
             position: fixed;
@@ -174,10 +332,10 @@ public sealed class HtmlExporter : IDocumentExporter
         strong { color: var(--text); }
         a { color: var(--accent); }
         ul { padding-left: 1.4rem; margin: 0.4rem 0; }
-        li { margin: 0.15rem 0; }
+        li { margin: 0.15rem 15px; }
         code {
             background: var(--code-bg);
-            color: #d8d8dc;
+            color: var(--code-fg);
             padding: 0.1rem 0.35rem;
             border-radius: 3px;
             font-family: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
@@ -241,6 +399,131 @@ public sealed class HtmlExporter : IDocumentExporter
             margin-right: 0.4rem;
             border-radius: 3px;
             background: var(--code-bg);
+        }
+        /*
+         * Einklappbare Hauptsektionen (Penumbra, Glamourer, Customize+).
+         * Standardmäßig zugeklappt; nur „Charakter" oben bleibt offen.
+         * Summary übernimmt das H2-Look-and-Feel, damit die Optik
+         * konsistent zur Markdown-Struktur bleibt.
+         */
+        details.section {
+            margin-top: 2rem;
+            border-bottom: 1px solid var(--border);
+        }
+        details.section[open] {
+            border-bottom: none;
+        }
+        summary.h2-summary {
+            list-style: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--accent);
+            font-size: 1.45rem;
+            font-weight: 600;
+            padding-bottom: 0.25rem;
+            border-bottom: 1px solid var(--border);
+            user-select: none;
+        }
+        summary.h2-summary::-webkit-details-marker {
+            display: none;
+        }
+        /* Eigener Disclosure-Pfeil — rotiert beim Aufklappen. */
+        summary.h2-summary::before {
+            content: "▶";
+            display: inline-block;
+            font-size: 0.8em;
+            transition: transform 120ms ease-out;
+            color: var(--muted);
+        }
+        details[open] > summary.h2-summary::before {
+            transform: rotate(90deg);
+        }
+        summary.h2-summary:hover {
+            color: var(--text);
+        }
+        /*
+         * Sub-Sektionen: H3 (Glamourer-Unterpunkte) und H4 (Penumbra-Mods).
+         * Optisch flacher als H2-Sektionen — kein border-bottom, kleinerer
+         * Font, weniger Abstand.
+         */
+        details.sub-section {
+            margin: 0.6rem 0 0.6rem 0.25rem;
+        }
+        summary.h3-summary,
+        summary.h4-summary {
+            list-style: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            font-weight: 600;
+            user-select: none;
+        }
+        summary.h3-summary {
+            color: var(--accent);
+            font-size: 1.2rem;
+            margin-top: 0.4rem;
+        }
+        /*
+         * Penumbra-Mod-Karten (H4-Sub-Sektionen). Jeder Mod-Eintrag ist
+         * gerahmt + leicht abgesetzt, damit sich aufgeklappte Mods optisch
+         * sauber von der nächsten Karte trennen — vorher ist nur der
+         * Pfeil + Mod-Name als Abgrenzung übriggeblieben, was bei
+         * mehrzeiligem Inhalt schwer lesbar war.
+         */
+        details.sub-section:has(> summary.h4-summary) {
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: var(--surface);
+            margin: 0.5rem 0;
+            padding: 0;
+        }
+        details.sub-section:has(> summary.h4-summary)[open] {
+            background: var(--surface-alt);
+        }
+        summary.h4-summary {
+            color: var(--text);
+            font-size: 1.05rem;
+            padding: 0.45rem 0.7rem;
+            border-radius: 4px;
+        }
+        details.sub-section[open] > summary.h4-summary {
+            border-bottom: 1px solid var(--border);
+            border-radius: 4px 4px 0 0;
+        }
+        summary.h4-summary:hover {
+            background: var(--surface-alt);
+        }
+        /*
+         * Mod-Inhalt einrücken, damit der Body sichtbar zur Summary-Zeile
+         * gehört statt linksbündig wie loser Fließtext zu wirken.
+         */
+        details.sub-section:has(> summary.h4-summary) > ul,
+        details.sub-section:has(> summary.h4-summary) > p {
+            padding: 0.5rem 0.85rem;
+            margin: 0;
+        }
+        summary.h3-summary::-webkit-details-marker,
+        summary.h4-summary::-webkit-details-marker {
+            display: none;
+        }
+        summary.h3-summary::before,
+        summary.h4-summary::before {
+            content: "▸";
+            display: inline-block;
+            font-size: 0.85em;
+            color: var(--muted);
+            transition: transform 120ms ease-out;
+        }
+        details[open] > summary.h3-summary::before,
+        details[open] > summary.h4-summary::before {
+            transform: rotate(90deg);
+        }
+        summary.h3-summary:hover,
+        summary.h4-summary:hover {
+            color: var(--text);
         }
         """;
 }
