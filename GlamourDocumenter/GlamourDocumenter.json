@@ -2,7 +2,7 @@
   "Author": "ElyFura",
   "Name": "Glamour Documenter",
   "InternalName": "GlamourDocumenter",
-  "AssemblyVersion": "0.1.2.6",
+  "AssemblyVersion": "0.1.2.7",
   "Description": "Exportiert kombinierte Einstellungen aus Penumbra, Glamourer und Customize+ als Markdown, HTML oder JSON.",
   "Punchline": "Penumbra + Glamourer + Customize+ in einem Dokument.",
   "RepoUrl": "https://github.com/ElyFura/GlamourDocumenter",

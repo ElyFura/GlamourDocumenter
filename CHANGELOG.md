@@ -27,6 +27,16 @@ Semver.
   Strg-Taste. Persistenz in `mod-templates.json` im Plugin-ConfigDir
   mit `FileVersion`.
 
+## [0.1.2.7] — 2026-09-06
+
+### Added
+
+- **Vorlagen teilen per Share-Code**: Button „Code“ pro Vorlage und
+  „Alle teilen“ pro Mod kopieren einen kompakten Code (`GDT1:` +
+  Base64/GZip-JSON) in die Zwischenablage. Import über Textfeld oder
+  direkt aus der Zwischenablage; Namenskollisionen bekommen ein
+  Zähler-Suffix, nicht installierte Mods werden markiert übernommen.
+
 ## [Unreleased]
 
 ### Added
