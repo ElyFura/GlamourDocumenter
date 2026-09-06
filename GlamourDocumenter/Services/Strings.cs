@@ -45,6 +45,7 @@ public static class Strings
     public static string TabExport      => T("Export", "Export");
     public static string TabHistory     => T("Historie", "History");
     public static string TabImport      => T("Re-Import", "Re-import");
+    public static string TabTemplates   => T("Vorlagen", "Templates");
     public static string TabSettings    => T("Einstellungen", "Settings");
     public static string TabInfo        => T("Info", "Info");
 
@@ -143,6 +144,60 @@ public static class Strings
     public static string ImportNothingSelected  => T(
         "Nichts ausgewählt — Dry-Run/Apply hätten keine Wirkung.",
         "Nothing selected — dry run/apply would have no effect.");
+
+    // ====================================================================
+    //  UI — Vorlagen-Tab (Mod-Optionssätze)
+    // ====================================================================
+
+    public static string TemplatesInfo => T(
+        "Vorlagen speichern die Optionen eines Penumbra-Mods unter einem " +
+        "Namen. So lässt sich pro Mod zwischen mehreren Einstellungen " +
+        "direkt umschalten. Anwenden schreibt in die aktive Collection " +
+        "des LocalPlayers.",
+        "Templates store the options of a Penumbra mod under a name, so " +
+        "you can switch a mod between several configurations directly. " +
+        "Apply writes to the local player's active collection.");
+    public static string TemplateNoPenumbra      => T("Penumbra ist nicht verfügbar.", "Penumbra is not available.");
+    public static string TemplateModLabel        => T("Mod", "Mod");
+    public static string TemplateModFilterHint   => T("Mods filtern…", "Filter mods…");
+    public static string TemplateRefresh         => T("Neu laden", "Reload");
+    public static string TemplateNoMods          => T("Keine Mods gefunden.", "No mods found.");
+    public static string TemplateMoreMods(int n) => T($"… und {n} weitere (Filter verfeinern)", $"… and {n} more (refine filter)");
+    public static string TemplateCollection(string n) => T($"Ziel-Collection: {n}", $"Target collection: {n}");
+    public static string TemplateNoCollection    => T(
+        "Keine aktive Collection (kein LocalPlayer oder Penumbra antwortet nicht).",
+        "No active collection (no local player or Penumbra not responding).");
+    public static string TemplateEditorHeader    => T("Optionen", "Options");
+    public static string TemplateLoadCurrent     => T("Aktuelle Einstellungen laden", "Load current settings");
+    public static string TemplateNoGroups        => T("Dieser Mod hat keine Optionsgruppen.", "This mod has no option groups.");
+    public static string TemplateDefaultsAssumed => T(
+        "Mod hat in der aktiven Collection keine eigenen Einstellungen — Standardwerte angenommen.",
+        "Mod has no settings in the active collection — defaults assumed.");
+    public static string TemplatePriority        => T("Priorität", "Priority");
+    public static string TemplateNameLabel       => T("Name der Vorlage", "Template name");
+    public static string TemplateSaveNew         => T("Als neue Vorlage speichern", "Save as new template");
+    public static string TemplateUpdate          => T("Vorlage aktualisieren", "Update template");
+    public static string TemplateCancelEdit      => T("Bearbeiten abbrechen", "Cancel editing");
+    public static string TemplateEditing(string n) => T($"Bearbeite: {n}", $"Editing: {n}");
+    public static string TemplateNameRequired    => T("Bitte einen Namen vergeben.", "Please enter a name.");
+    public static string TemplateSaved(string n)  => T($"Vorlage „{n}“ gespeichert.", $"Template \"{n}\" saved.");
+    public static string TemplateDeleted(string n) => T($"Vorlage „{n}“ gelöscht.", $"Template \"{n}\" deleted.");
+    public static string TemplateGalleryHeader    => T("Galerie", "Gallery");
+    public static string TemplateGalleryEmpty     => T("Noch keine Vorlagen gespeichert.", "No templates saved yet.");
+    public static string TemplateOnlySelectedMod  => T("Nur gewählter Mod", "Selected mod only");
+    public static string TemplateEnableOnApply    => T("Mod beim Anwenden aktivieren", "Enable mod on apply");
+    public static string TemplateApply            => T("Anwenden", "Apply");
+    public static string TemplateEdit             => T("Bearbeiten", "Edit");
+    public static string TemplateDelete           => T("Löschen", "Delete");
+    public static string TemplateDeleteHint       => T("Strg gedrückt halten und klicken, um zu löschen.", "Hold Ctrl and click to delete.");
+    public static string TemplateNotInstalled     => T("(nicht installiert)", "(not installed)");
+    public static string TemplateSummary(int groups, int prio)
+        => T($"{groups} Gruppen · Prio {prio}", $"{groups} groups · prio {prio}");
+    public static string TemplateApplyOk(string n, int groups)
+        => T($"„{n}“ angewendet ({groups} Gruppen).", $"\"{n}\" applied ({groups} groups).");
+    public static string TemplateApplyPartial(string n, int problems, string details)
+        => T($"„{n}“ angewendet, {problems} Problem(e): {details}", $"\"{n}\" applied, {problems} problem(s): {details}");
+    public static string TemplateApplyError(string err) => T($"Anwenden fehlgeschlagen: {err}", $"Apply failed: {err}");
 
     // ====================================================================
     //  UI — Settings-Tab

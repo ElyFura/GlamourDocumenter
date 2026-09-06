@@ -52,6 +52,7 @@ public sealed class PenumbraIpc : IDisposable
     private readonly GetCollectionForObject _getCollectionForObject;
     private readonly GetAllModSettings _getAllModSettings;
     private readonly GetCurrentModSettings _getCurrentModSettings;
+    private readonly GetAvailableModSettings _getAvailableModSettings;
     private readonly TrySetMod _trySetMod;
     private readonly TrySetModPriority _trySetModPriority;
     private readonly TrySetModSettings _trySetModSettings;
@@ -66,6 +67,7 @@ public sealed class PenumbraIpc : IDisposable
         _getCollectionForObject = new GetCollectionForObject(pluginInterface);
         _getAllModSettings = new GetAllModSettings(pluginInterface);
         _getCurrentModSettings = new GetCurrentModSettings(pluginInterface);
+        _getAvailableModSettings = new GetAvailableModSettings(pluginInterface);
         _trySetMod = new TrySetMod(pluginInterface);
         _trySetModPriority = new TrySetModPriority(pluginInterface);
         _trySetModSettings = new TrySetModSettings(pluginInterface);
@@ -279,8 +281,53 @@ public sealed class PenumbraIpc : IDisposable
         }
     }
 
+    /// <summary>
+    ///     Liefert die Option-Gruppen eines Mods mit allen wählbaren
+    ///     Optionen und ob die Gruppe Single-Select ist.
+    /// </summary>
+    /// <remarks>
+    ///     Upstream-Signatur (Penumbra.Api 5.13):
+    ///     <code>
+    ///     Dictionary&lt;string, (string[] Options, GroupType Type)&gt;?
+    ///     Invoke(string modDirectory, string modName = "")
+    ///     </code>
+    ///     <c>GroupType.Single</c> → Radio-Auswahl; <c>Multi</c>,
+    ///     <c>Imc</c> und <c>Combining</c> erlauben mehrere Optionen und
+    ///     werden als Checkboxen behandelt. Wird von der Vorlagen-Galerie
+    ///     genutzt, um den Optionen-Editor aufzubauen.
+    /// </remarks>
+    /// <returns>Leeres Dictionary, wenn der Mod unbekannt ist oder IPC fehlschlägt.</returns>
+    public IReadOnlyDictionary<string, ModOptionGroup> GetAvailableModSettings(string modDirectory)
+    {
+        if (!IsAvailable())
+            return new Dictionary<string, ModOptionGroup>();
+
+        try
+        {
+            var data = _getAvailableModSettings.Invoke(modDirectory, string.Empty);
+            if (data is null)
+            {
+                _log.Debug("[GlamourDocumenter] GetAvailableModSettings: mod={Mod} unbekannt.", modDirectory);
+                return new Dictionary<string, ModOptionGroup>();
+            }
+
+            var result = new Dictionary<string, ModOptionGroup>(data.Count);
+            foreach (var kvp in data)
+            {
+                var (options, type) = kvp.Value;
+                result[kvp.Key] = new ModOptionGroup(options, type == GroupType.Single);
+            }
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _log.Warning(ex, "[GlamourDocumenter] GetAvailableModSettings fehlgeschlagen (mod={Mod}).", modDirectory);
+            return new Dictionary<string, ModOptionGroup>();
+        }
+    }
+
     // ---------------------------------------------------------------------
-    //  Setter-Wrapper (für Re-Import)
+    //  Setter-Wrapper (für Re-Import und Vorlagen-Galerie)
     // ---------------------------------------------------------------------
 
     /// <summary>Aktiviert / deaktiviert einen Mod in einer Collection.</summary>
@@ -362,3 +409,11 @@ public readonly record struct ModSettingsSnapshot(
     int Priority,
     IReadOnlyDictionary<string, IReadOnlyList<string>> Settings,
     bool Inherited);
+
+/// <summary>
+///     Eine Option-Gruppe eines Mods: wählbare Optionen und ob genau
+///     eine (<see cref="SingleSelect"/>) oder mehrere gewählt werden dürfen.
+/// </summary>
+public readonly record struct ModOptionGroup(
+    IReadOnlyList<string> Options,
+    bool SingleSelect);

@@ -64,6 +64,8 @@ public sealed class Plugin : IDalamudPlugin
     private readonly GlamourerStateParser _glamourerParser;
     private readonly DocumentationCollector _collector;
     private readonly DocumentationImporter _importer;
+    private readonly ModTemplateStore _templates;
+    private readonly ModTemplateApplier _templateApplier;
     private readonly GitAutoCommit _git;
 
     private readonly WindowSystem _windowSystem;
@@ -92,9 +94,15 @@ public sealed class Plugin : IDalamudPlugin
         _collector = new DocumentationCollector(
             ObjectTable, Log, _penumbra, _glamourer, _customizePlus, _glamourerParser, _lumina);
         _importer = new DocumentationImporter(Log, _penumbra, _glamourer);
+        // Vorlagen-Galerie: Store lädt mod-templates.json aus dem
+        // ConfigDir, Applier schreibt über die Penumbra-Setter.
+        _templates = new ModTemplateStore(PluginInterface, Log);
+        _templateApplier = new ModTemplateApplier(Log, _penumbra);
         _git = new GitAutoCommit(Log);
 
-        _mainWindow = new MainWindow(_collector, _importer, _git, ObjectTable, PluginInterface, Log, Config);
+        _mainWindow = new MainWindow(
+            _collector, _importer, _templates, _templateApplier, _penumbra,
+            _git, ObjectTable, PluginInterface, Log, Config);
 
         // Auto-Export bei Zone-Wechsel — Subscriber wird nur aktiv,
         // wenn die Config das Flag gesetzt hat.
@@ -193,6 +201,7 @@ public sealed class Plugin : IDalamudPlugin
         _windowSystem.RemoveAllWindows();
         _mainWindow.Dispose();
 
+        _templates.Dispose();
         _collector.Dispose();
         _lumina.Dispose();
         _customizePlus.Dispose();

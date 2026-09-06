@@ -32,10 +32,14 @@ namespace GlamourDocumenter.Windows;
 ///     Haupt-UI. Zeigt den zuletzt gesammelten Export, erlaubt den
 ///     Re-Sammel-Trigger und schreibt den Export in eine Datei.
 /// </summary>
-public sealed class MainWindow : Window, IDisposable
+public sealed partial class MainWindow : Window, IDisposable
 {
     private readonly DocumentationCollector _collector;
     private readonly DocumentationImporter _importer;
+    // Vorlagen-Galerie (Tab „Vorlagen", siehe MainWindow.Templates.cs).
+    private readonly ModTemplateStore _templates;
+    private readonly ModTemplateApplier _templateApplier;
+    private readonly PenumbraIpc _penumbra;
     private readonly GitAutoCommit _git;
     private readonly IObjectTable _objectTable;
     private readonly IDalamudPluginInterface _pluginInterface;
@@ -102,6 +106,9 @@ public sealed class MainWindow : Window, IDisposable
     public MainWindow(
         DocumentationCollector collector,
         DocumentationImporter importer,
+        ModTemplateStore templates,
+        ModTemplateApplier templateApplier,
+        PenumbraIpc penumbra,
         GitAutoCommit git,
         IObjectTable objectTable,
         IDalamudPluginInterface pluginInterface,
@@ -111,6 +118,9 @@ public sealed class MainWindow : Window, IDisposable
     {
         _collector = collector;
         _importer = importer;
+        _templates = templates;
+        _templateApplier = templateApplier;
+        _penumbra = penumbra;
         _git = git;
         _objectTable = objectTable;
         _pluginInterface = pluginInterface;
@@ -130,7 +140,7 @@ public sealed class MainWindow : Window, IDisposable
 
     public override void Draw()
     {
-        // Tab-Bar: Export / Historie / Re-Import / Einstellungen / Info.
+        // Tab-Bar: Export / Historie / Re-Import / Vorlagen / Einstellungen / Info.
         // Der frühere Vergleich-Tab und der Character-Picker sind
         // bewusst entfernt: Penumbra liefert für Remote-Charaktere nur
         // die für unsere eigene Collection sichtbaren Mods, was für
@@ -153,6 +163,12 @@ public sealed class MainWindow : Window, IDisposable
             if (ImGui.BeginTabItem(Strings.TabImport))
             {
                 DrawImportTab();
+                ImGui.EndTabItem();
+            }
+
+            if (ImGui.BeginTabItem(Strings.TabTemplates))
+            {
+                DrawTemplatesTab();
                 ImGui.EndTabItem();
             }
 
