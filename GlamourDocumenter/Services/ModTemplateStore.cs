@@ -74,6 +74,46 @@ public sealed class ModTemplateStore : IDisposable
         Save();
     }
 
+    /// <summary>
+    ///     Übernimmt importierte Vorlagen (z. B. aus einem Share-Code).
+    ///     Namenskollisionen innerhalb desselben Mods werden mit einem
+    ///     Zähler-Suffix aufgelöst, damit nichts stillschweigend
+    ///     überschrieben wird. Speichert einmal am Ende.
+    /// </summary>
+    /// <returns>Anzahl übernommener Vorlagen.</returns>
+    public int Import(IEnumerable<ModTemplate> templates)
+    {
+        var count = 0;
+        foreach (var tpl in templates)
+        {
+            tpl.Name = MakeUniqueName(tpl.ModDirectory, tpl.Name);
+            _library.Templates.Add(tpl);
+            count++;
+        }
+
+        if (count > 0)
+        {
+            SortInPlace();
+            Save();
+        }
+        return count;
+    }
+
+    private string MakeUniqueName(string modDirectory, string baseName)
+    {
+        var taken = new HashSet<string>(
+            ForMod(modDirectory).Select(t => t.Name), StringComparer.OrdinalIgnoreCase);
+        if (!taken.Contains(baseName))
+            return baseName;
+
+        for (var i = 2; ; i++)
+        {
+            var candidate = $"{baseName} ({i})";
+            if (!taken.Contains(candidate))
+                return candidate;
+        }
+    }
+
     /// <summary>Entfernt eine Vorlage und speichert.</summary>
     public void Remove(Guid id)
     {

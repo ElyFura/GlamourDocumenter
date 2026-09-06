@@ -199,6 +199,30 @@ public static class Strings
         => T($"„{n}“ angewendet, {problems} Problem(e): {details}", $"\"{n}\" applied, {problems} problem(s): {details}");
     public static string TemplateApplyError(string err) => T($"Anwenden fehlgeschlagen: {err}", $"Apply failed: {err}");
 
+    // Teilen per Share-Code
+    public static string TemplateShareHeader     => T("Teilen", "Share");
+    public static string TemplateShareCode       => T("Code", "Code");
+    public static string TemplateShareCodeHint   => T("Share-Code in die Zwischenablage kopieren.", "Copy share code to clipboard.");
+    public static string TemplateShareAll        => T("Alle teilen", "Share all");
+    public static string TemplateShareAllHint    => T("Alle Vorlagen dieses Mods als einen Code kopieren.", "Copy all templates of this mod as one code.");
+    public static string TemplateShareCopied(string n, int chars)
+        => T($"Share-Code für „{n}“ kopiert ({chars} Zeichen).", $"Share code for \"{n}\" copied ({chars} chars).");
+    public static string TemplateShareCopiedMany(int count, string mod, int chars)
+        => T($"Share-Code mit {count} Vorlagen für „{mod}“ kopiert ({chars} Zeichen).",
+             $"Share code with {count} templates for \"{mod}\" copied ({chars} chars).");
+    public static string TemplateImportHint      => T("Share-Code hier einfügen…", "Paste share code here…");
+    public static string TemplateImportButton    => T("Importieren", "Import");
+    public static string TemplateImportClipboard => T("Aus Zwischenablage", "From clipboard");
+    public static string TemplateImported(int count, string mods)
+        => T($"{count} Vorlage(n) importiert: {mods}", $"{count} template(s) imported: {mods}");
+    public static string TemplateImportNotInstalledNote
+        => T(" — Mod(s) nicht installiert, Anwenden erst nach Installation.", " — mod(s) not installed, apply after installing.");
+    public static string ShareCodeEmpty          => T("Kein Code angegeben.", "No code given.");
+    public static string ShareCodeBadPrefix(string p) => T($"Kein Vorlagen-Code (erwartet Präfix {p}).", $"Not a template code (expected prefix {p}).");
+    public static string ShareCodeNoTemplates    => T("Code enthält keine Vorlagen.", "Code contains no templates.");
+    public static string ShareCodeInvalidEntry   => T("Code enthält eine ungültige Vorlage (Name oder Mod fehlt).", "Code contains an invalid template (name or mod missing).");
+    public static string ShareCodeCorrupt(string err) => T($"Code beschädigt: {err}", $"Code corrupt: {err}");
+
     // ====================================================================
     //  UI — Settings-Tab
     // ====================================================================

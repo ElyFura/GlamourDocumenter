@@ -68,4 +68,33 @@ public sealed class ModTemplate
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
 
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.Now;
+
+    /// <summary>Reduziert die Vorlage auf die teilbaren Felder.</summary>
+    public ModTemplateShare ToShare() => new(Name, ModDirectory, ModName, Priority, Settings);
+
+    /// <summary>
+    ///     Baut aus einem geteilten Payload eine neue Vorlage mit frischer
+    ///     ID und aktuellen Zeitstempeln — importierte Vorlagen sind
+    ///     eigenständige Kopien, keine Referenzen auf die Quelle.
+    /// </summary>
+    public static ModTemplate FromShare(ModTemplateShare share) => new()
+    {
+        Name = share.Name,
+        ModDirectory = share.ModDirectory,
+        ModName = share.ModName,
+        Priority = share.Priority,
+        Settings = share.Settings ?? new Dictionary<string, List<string>>(),
+    };
 }
+
+/// <summary>
+///     Teilbarer Payload einer Vorlage (Share-Code). Bewusst ohne ID und
+///     Zeitstempel: die sind lokal und würden beim Empfänger nur stören.
+///     Property-Namen sind kurz gehalten, damit der Code klein bleibt.
+/// </summary>
+public sealed record ModTemplateShare(
+    [property: System.Text.Json.Serialization.JsonPropertyName("n")] string Name,
+    [property: System.Text.Json.Serialization.JsonPropertyName("d")] string ModDirectory,
+    [property: System.Text.Json.Serialization.JsonPropertyName("m")] string ModName,
+    [property: System.Text.Json.Serialization.JsonPropertyName("p")] int Priority,
+    [property: System.Text.Json.Serialization.JsonPropertyName("s")] Dictionary<string, List<string>>? Settings);

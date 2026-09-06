@@ -57,6 +57,9 @@ public sealed partial class MainWindow
     private string _tplStatus = string.Empty;
     private bool _tplStatusIsError;
 
+    // Eingabefeld für Share-Codes (Import).
+    private string _tplImportCode = string.Empty;
+
     // -------------------------------------------------------------------
     //  Tab
     // -------------------------------------------------------------------
@@ -416,6 +419,8 @@ public sealed partial class MainWindow
         ImGui.SameLine();
         ImGui.Checkbox(Strings.TemplateEnableOnApply, ref _tplEnableOnApply);
 
+        DrawTemplateImportRow();
+
         var all = _templates.Templates;
         if (all.Count == 0)
         {
@@ -443,7 +448,18 @@ public sealed partial class MainWindow
                     header += $" {Strings.TemplateNotInstalled}";
 
                 ImGui.PushID(modGroup.Key);
-                if (ImGui.TreeNodeEx(header, ImGuiTreeNodeFlags.DefaultOpen))
+                var open = ImGui.TreeNodeEx(header, ImGuiTreeNodeFlags.DefaultOpen | ImGuiTreeNodeFlags.AllowItemOverlap);
+                // „Alle teilen" rechts in der Kopfzeile — ein Code mit
+                // allen Vorlagen dieses Mods.
+                ImGui.SameLine(ImGui.GetContentRegionAvail().X + ImGui.GetCursorPosX()
+                               - ImGui.CalcTextSize(Strings.TemplateShareAll).X
+                               - ImGui.GetStyle().FramePadding.X * 2);
+                if (ImGui.SmallButton(Strings.TemplateShareAll))
+                    ShareTemplates(modGroup.ToList());
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip(Strings.TemplateShareAllHint);
+
+                if (open)
                 {
                     foreach (var tpl in modGroup)
                         DrawTemplateRow(tpl, isInstalled, ctrl);
@@ -485,6 +501,12 @@ public sealed partial class MainWindow
         if (!ctrl) ImGui.EndDisabled();
         if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
             ImGui.SetTooltip(Strings.TemplateDeleteHint);
+
+        ImGui.SameLine();
+        if (ImGui.Button(Strings.TemplateShareCode))
+            ShareTemplates(new List<ModTemplate> { tpl });
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip(Strings.TemplateShareCodeHint);
 
         ImGui.SameLine();
         ImGui.TextUnformatted(tpl.Name);
@@ -555,5 +577,98 @@ public sealed partial class MainWindow
     {
         _tplStatus = text;
         _tplStatusIsError = isError;
+    }
+
+    // -------------------------------------------------------------------
+    //  Teilen (Share-Code)
+    // -------------------------------------------------------------------
+
+    /// <summary>
+    ///     Kodiert Vorlagen zu einem Share-Code und legt ihn in die
+    ///     Zwischenablage. Die Zeichenzahl wird angezeigt, weil Chat-
+    ///     Clients Nachrichtenlimits haben (Discord: 2000).
+    /// </summary>
+    private void ShareTemplates(List<ModTemplate> templates)
+    {
+        if (templates.Count == 0)
+            return;
+
+        try
+        {
+            var code = ModTemplateCodec.Encode(templates);
+            ImGui.SetClipboardText(code);
+            var status = templates.Count == 1
+                ? Strings.TemplateShareCopied(templates[0].Name, code.Length)
+                : Strings.TemplateShareCopiedMany(templates.Count, templates[0].ModName, code.Length);
+            SetTemplateStatus(status, isError: false);
+        }
+        catch (Exception ex)
+        {
+            _log.Warning(ex, "[GlamourDocumenter] Share-Code konnte nicht erzeugt werden.");
+            SetTemplateStatus(Strings.ImportError(ex.Message), isError: true);
+        }
+    }
+
+    /// <summary>
+    ///     Eingabezeile für den Import: Textfeld + „Importieren" +
+    ///     „Aus Zwischenablage" (liest direkt, ohne Einfügen ins Feld).
+    /// </summary>
+    private void DrawTemplateImportRow()
+    {
+        var importW = ImGui.CalcTextSize(Strings.TemplateImportButton).X + ImGui.GetStyle().FramePadding.X * 2;
+        var clipW = ImGui.CalcTextSize(Strings.TemplateImportClipboard).X + ImGui.GetStyle().FramePadding.X * 2;
+        var fieldW = ImGui.GetContentRegionAvail().X - importW - clipW - ImGui.GetStyle().ItemSpacing.X * 2;
+
+        ImGui.SetNextItemWidth(MathF.Max(fieldW, 100f));
+        // 16 KiB reichen für Codes mit dutzenden Vorlagen; Codes darüber
+        // wären ohnehin nicht mehr chat-tauglich.
+        ImGui.InputText(
+            "##tpl-import-code",
+            ref _tplImportCode,
+            16384,
+            ImGuiInputTextFlags.None,
+            callback: (ImGui.ImGuiInputTextCallbackDelegate?)null);
+        DrawInputHintOverlay(_tplImportCode, Strings.TemplateImportHint);
+
+        ImGui.SameLine();
+        var hasCode = !string.IsNullOrWhiteSpace(_tplImportCode);
+        if (!hasCode) ImGui.BeginDisabled();
+        if (ImGui.Button(Strings.TemplateImportButton))
+        {
+            if (ImportTemplateCode(_tplImportCode))
+                _tplImportCode = string.Empty;
+        }
+        if (!hasCode) ImGui.EndDisabled();
+
+        ImGui.SameLine();
+        if (ImGui.Button(Strings.TemplateImportClipboard))
+            ImportTemplateCode(ImGui.GetClipboardText());
+    }
+
+    /// <summary>
+    ///     Dekodiert einen Share-Code und übernimmt die Vorlagen in den
+    ///     Store. Nicht installierte Mods werden trotzdem importiert —
+    ///     die Galerie markiert sie, Anwenden ist bis zur Installation
+    ///     deaktiviert.
+    /// </summary>
+    /// <returns><c>true</c> bei Erfolg.</returns>
+    private bool ImportTemplateCode(string? code)
+    {
+        if (!ModTemplateCodec.TryDecode(code, out var templates, out var error))
+        {
+            _log.Debug("[GlamourDocumenter] Share-Code-Import abgelehnt: {Error}", error);
+            SetTemplateStatus(error, isError: true);
+            return false;
+        }
+
+        var count = _templates.Import(templates);
+        var installed = new HashSet<string>(_tplMods.Select(m => m.Key), StringComparer.Ordinal);
+        var modNames = string.Join(", ", templates.Select(t => t.ModName).Distinct(StringComparer.Ordinal));
+        var status = Strings.TemplateImported(count, modNames);
+        if (templates.Any(t => !installed.Contains(t.ModDirectory)))
+            status += Strings.TemplateImportNotInstalledNote;
+
+        SetTemplateStatus(status, isError: false);
+        return true;
     }
 }
