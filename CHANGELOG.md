@@ -4,6 +4,17 @@ Alle relevanten Änderungen am Plugin. Format lose an [Keep a Changelog]
 (https://keepachangelog.com/) angelehnt, Versionen orientieren sich an
 Semver.
 
+## [0.1.2.5] — 2026-09-06
+
+### Added
+
+- **Re-Import-Auswahl** „Was importieren?“: Glamourer (Equipment /
+  Customization getrennt), Penumbra (An/Aus-Status, Priorität, Optionen
+  getrennt) sowie eine filterbare Mod-Liste mit Alle/Keine/Nur-aktive-
+  Schnellwahl. Customize+-Template-Ausgabe im Report abschaltbar.
+  Abgewählte Teile werden im Dry-Run/Apply-Report als übersprungen
+  ausgewiesen.
+
 ## [Unreleased]
 
 ### Added
