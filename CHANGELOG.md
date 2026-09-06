@@ -15,6 +15,18 @@ Semver.
   Abgewählte Teile werden im Dry-Run/Apply-Report als übersprungen
   ausgewiesen.
 
+## [0.1.2.6] — 2026-09-06
+
+### Added
+
+- **Vorlagen-Galerie** (Tab „Vorlagen“): Optionssätze eines Penumbra-Mods
+  unter einem Namen speichern und per Klick in die aktive Collection
+  schreiben. Editor mit Single-Select (Combo) und Multi-Select
+  (Checkboxen) pro Optionsgruppe, Priorität, Aktualisieren bestehender
+  Vorlagen. Galerie gruppiert nach Mod, Löschen nur mit gehaltener
+  Strg-Taste. Persistenz in `mod-templates.json` im Plugin-ConfigDir
+  mit `FileVersion`.
+
 ## [Unreleased]
 
 ### Added
