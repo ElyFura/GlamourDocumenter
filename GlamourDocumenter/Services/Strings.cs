@@ -97,12 +97,13 @@ public static class Strings
         "ohne Schreib-Operationen, was der Apply tun würde. Apply schreibt " +
         "in die aktuell aktive Penumbra-Collection und setzt den " +
         "Glamourer-State. Customize+ muss manuell aus dem Template-Block " +
-        "importiert werden.",
+        "importiert werden. Unter „Was importieren?“ lässt sich die " +
+        "Auswahl eingrenzen.",
         "Re-import a JSON export onto the local player. Dry-run shows what " +
         "Apply would do without writing anything. Apply writes to the " +
         "currently active Penumbra collection and sets the Glamourer " +
         "state. Customize+ must be imported manually from the template " +
-        "block.");
+        "block. Use \"What to import?\" to narrow the selection.");
     public static string NoJsonExports         => T("Keine JSON-Exports vorhanden.", "No JSON exports available.");
     public static string SourceLabel           => T("Quelle", "Source");
     public static string TargetNoPlayer        => T("Ziel: (kein LocalPlayer — Login nötig)", "Target: (no local player — log in)");
@@ -117,6 +118,31 @@ public static class Strings
     public static string SelectPlaceholder     => T("(auswählen)", "(select)");
     public static string ImportError(string err) => T($"Fehler: {err}", $"Error: {err}");
     public static string ImportEmpty           => T("Leerer Export.", "Empty export.");
+
+    // Auswahl-Block „Was importieren?"
+    public static string ImportSelectionHeader  => T("Was importieren?", "What to import?");
+    public static string ImportSelectGlamourer  => T("Glamourer-State", "Glamourer state");
+    public static string ImportSelectEquipment  => T("Equipment", "Equipment");
+    public static string ImportSelectCustomize  => T("Customization (Aussehen)", "Customization (appearance)");
+    public static string ImportSelectPenumbra   => T("Penumbra-Mods", "Penumbra mods");
+    public static string ImportSelectEnabled    => T("An/Aus-Status", "Enabled state");
+    public static string ImportSelectPriority   => T("Priorität", "Priority");
+    public static string ImportSelectSettings   => T("Optionen (Gruppen)", "Options (groups)");
+    public static string ImportSelectCPlus      => T("Customize+-Template im Report zeigen", "Show Customize+ template in report");
+    public static string ImportNotInSource      => T("(nicht in der Quelle)", "(not in source)");
+    public static string ImportModsLabel(int sel, int total)
+        => T($"Mods: {sel} von {total} ausgewählt", $"Mods: {sel} of {total} selected");
+    public static string ImportModsAll          => T("Alle", "All");
+    public static string ImportModsNone         => T("Keine", "None");
+    public static string ImportModsOnlyEnabled  => T("Nur aktive", "Only enabled");
+    public static string ImportModFilterHint    => T("Filter…", "Filter…");
+    public static string ImportModDisabledTag   => T("aus", "off");
+    public static string ImportModTooltip(string dir, int prio, int groups)
+        => T($"Verzeichnis: {dir}\nPriorität: {prio}\nOption-Gruppen: {groups}",
+             $"Directory: {dir}\nPriority: {prio}\nOption groups: {groups}");
+    public static string ImportNothingSelected  => T(
+        "Nichts ausgewählt — Dry-Run/Apply hätten keine Wirkung.",
+        "Nothing selected — dry run/apply would have no effect.");
 
     // ====================================================================
     //  UI — Settings-Tab

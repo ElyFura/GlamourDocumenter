@@ -89,6 +89,15 @@ public sealed class MainWindow : Window, IDisposable
     private string? _importPath;
     private string _importResult = string.Empty;
     private bool _importConfirmOpen;
+    // Geparster Export der aktuell gewählten Quelle. Wird einmal beim
+    // Datei-Wechsel gelesen, damit die Auswahl-Checkboxen (Mod-Liste)
+    // nicht pro Frame die JSON-Datei neu parsen. _importParsedPath
+    // merkt sich, für welchen Pfad der Cache gilt.
+    private string? _importParsedPath;
+    private DocumentationExport? _importParsed;
+    private string _importParseError = string.Empty;
+    private readonly ImportOptions _importOptions = new();
+    private string _importModFilter = string.Empty;
 
     public MainWindow(
         DocumentationCollector collector,
@@ -679,14 +688,28 @@ public sealed class MainWindow : Window, IDisposable
 
         DrawFilePicker(Strings.SourceLabel, jsonFiles, ref _importPath);
 
+        // Quelle einmalig parsen, wenn sich der Pfad geändert hat. Die
+        // Auswahl wird dabei zurückgesetzt, damit Ausschlüsse eines
+        // anderen Exports nicht stillschweigend weiterwirken.
+        if (!string.Equals(_importPath, _importParsedPath, StringComparison.OrdinalIgnoreCase))
+            LoadImportSource();
+
         var target = _objectTable.LocalPlayer;
         ImGui.Text(target is null
             ? Strings.TargetNoPlayer
             : Strings.TargetWith(target.Name.TextValue));
 
+        if (!string.IsNullOrEmpty(_importParseError))
+            ImGui.TextColored(new Vector4(1f, 0.4f, 0.4f, 1f), _importParseError);
+
+        if (_importParsed is not null)
+            DrawImportSelection(_importParsed);
+
         ImGui.Separator();
 
-        var ready = !string.IsNullOrEmpty(_importPath) && target is not null;
+        var ready = _importParsed is not null && target is not null && _importOptions.AnythingToApply;
+        if (_importParsed is not null && !_importOptions.AnythingToApply)
+            ImGui.TextDisabled(Strings.ImportNothingSelected);
         if (!ready) ImGui.BeginDisabled();
 
         if (ImGui.Button(Strings.DryRunButton))
@@ -744,9 +767,211 @@ public sealed class MainWindow : Window, IDisposable
         }
     }
 
+    /// <summary>
+    ///     Liest und parst die gewählte Quelldatei in den Cache
+    ///     (<see cref="_importParsed"/>) und setzt die Auswahl zurück.
+    ///     Parse-Fehler landen in <see cref="_importParseError"/> statt
+    ///     zu bubblen — der Tab bleibt bedienbar.
+    /// </summary>
+    private void LoadImportSource()
+    {
+        _importParsedPath = _importPath;
+        _importParsed = null;
+        _importParseError = string.Empty;
+        _importResult = string.Empty;
+        _importModFilter = string.Empty;
+        _importOptions.Reset();
+
+        if (string.IsNullOrEmpty(_importPath))
+            return;
+
+        try
+        {
+            var json = File.ReadAllText(_importPath);
+            _importParsed = System.Text.Json.JsonSerializer.Deserialize<DocumentationExport>(
+                                json,
+                                new System.Text.Json.JsonSerializerOptions
+                                {
+                                    PropertyNameCaseInsensitive = true,
+                                    Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
+                                })
+                            ?? throw new InvalidOperationException(Strings.ImportEmpty);
+        }
+        catch (Exception ex)
+        {
+            _log.Error(ex, "[GlamourDocumenter] Re-Import: Quelle konnte nicht geladen werden.");
+            _importParseError = Strings.ImportError(ex.Message);
+        }
+    }
+
+    /// <summary>
+    ///     Auswahl-Block „Was importieren?": Plugin-Teile mit Unter-Flags
+    ///     und eine filterbare Mod-Liste. Schreibt direkt in
+    ///     <see cref="_importOptions"/>.
+    /// </summary>
+    private void DrawImportSelection(DocumentationExport export)
+    {
+        if (!ImGui.CollapsingHeader(Strings.ImportSelectionHeader, ImGuiTreeNodeFlags.DefaultOpen))
+            return;
+
+        // --- Glamourer -------------------------------------------------
+        var hasGlam = export.Glamourer is not null;
+        if (!hasGlam) ImGui.BeginDisabled();
+        var glam = _importOptions.Glamourer && hasGlam;
+        if (ImGui.Checkbox(Strings.ImportSelectGlamourer, ref glam))
+            _importOptions.Glamourer = glam;
+        if (!hasGlam)
+        {
+            ImGui.SameLine();
+            ImGui.TextDisabled(Strings.ImportNotInSource);
+        }
+
+        ImGui.Indent();
+        if (!glam) ImGui.BeginDisabled();
+        var equip = _importOptions.GlamourerEquipment;
+        if (ImGui.Checkbox(Strings.ImportSelectEquipment, ref equip))
+            _importOptions.GlamourerEquipment = equip;
+        ImGui.SameLine();
+        var cust = _importOptions.GlamourerCustomization;
+        if (ImGui.Checkbox(Strings.ImportSelectCustomize, ref cust))
+            _importOptions.GlamourerCustomization = cust;
+        if (!glam) ImGui.EndDisabled();
+        ImGui.Unindent();
+        if (!hasGlam) ImGui.EndDisabled();
+
+        ImGui.Spacing();
+
+        // --- Penumbra --------------------------------------------------
+        var hasPen = export.Penumbra is not null;
+        if (!hasPen) ImGui.BeginDisabled();
+        var pen = _importOptions.Penumbra && hasPen;
+        if (ImGui.Checkbox(Strings.ImportSelectPenumbra, ref pen))
+            _importOptions.Penumbra = pen;
+        if (!hasPen)
+        {
+            ImGui.SameLine();
+            ImGui.TextDisabled(Strings.ImportNotInSource);
+        }
+
+        ImGui.Indent();
+        if (!pen) ImGui.BeginDisabled();
+        var en = _importOptions.PenumbraEnabledState;
+        if (ImGui.Checkbox(Strings.ImportSelectEnabled, ref en))
+            _importOptions.PenumbraEnabledState = en;
+        ImGui.SameLine();
+        var prio = _importOptions.PenumbraPriority;
+        if (ImGui.Checkbox(Strings.ImportSelectPriority, ref prio))
+            _importOptions.PenumbraPriority = prio;
+        ImGui.SameLine();
+        var sett = _importOptions.PenumbraSettings;
+        if (ImGui.Checkbox(Strings.ImportSelectSettings, ref sett))
+            _importOptions.PenumbraSettings = sett;
+
+        if (export.Penumbra is { } penumbra)
+            DrawImportModList(penumbra.Mods);
+
+        if (!pen) ImGui.EndDisabled();
+        ImGui.Unindent();
+        if (!hasPen) ImGui.EndDisabled();
+
+        ImGui.Spacing();
+
+        // --- Customize+ ------------------------------------------------
+        var hasCPlus = export.CustomizePlus is not null;
+        if (!hasCPlus) ImGui.BeginDisabled();
+        var cplus = _importOptions.ShowCustomizePlusTemplate && hasCPlus;
+        if (ImGui.Checkbox(Strings.ImportSelectCPlus, ref cplus))
+            _importOptions.ShowCustomizePlusTemplate = cplus;
+        if (!hasCPlus)
+        {
+            ImGui.SameLine();
+            ImGui.TextDisabled(Strings.ImportNotInSource);
+        }
+        if (!hasCPlus) ImGui.EndDisabled();
+
+        ImGui.Spacing();
+    }
+
+    /// <summary>
+    ///     Filterbare Checkbox-Liste aller Mods des Exports mit
+    ///     Alle/Keine/Nur-aktive-Schnellwahl. Die Liste steht in einem
+    ///     Child mit fester Höhe, damit große Collections (hunderte
+    ///     Mods) den Tab nicht sprengen.
+    /// </summary>
+    private void DrawImportModList(IReadOnlyList<PenumbraModEntry> mods)
+    {
+        var selectedCount = mods.Count(m => _importOptions.IsModSelected(m.ModDirectory));
+        ImGui.TextUnformatted(Strings.ImportModsLabel(selectedCount, mods.Count));
+
+        ImGui.SameLine();
+        if (ImGui.SmallButton(Strings.ImportModsAll))
+            _importOptions.ExcludedMods.Clear();
+        ImGui.SameLine();
+        if (ImGui.SmallButton(Strings.ImportModsNone))
+        {
+            foreach (var m in mods)
+                _importOptions.ExcludedMods.Add(m.ModDirectory);
+        }
+        ImGui.SameLine();
+        if (ImGui.SmallButton(Strings.ImportModsOnlyEnabled))
+        {
+            // „Nur aktive": deaktivierte Mods des Exports ausschließen —
+            // typischer Fall, wenn man ein Outfit übernehmen, aber die
+            // Ziel-Collection nicht mit Aus-Schaltern zumüllen will.
+            foreach (var m in mods)
+                _importOptions.SetModSelected(m.ModDirectory, m.Enabled);
+        }
+
+        ImGui.SetNextItemWidth(-1);
+        ImGui.InputText(
+            $"##import-mod-filter",
+            ref _importModFilter,
+            128,
+            ImGuiInputTextFlags.None,
+            callback: (ImGui.ImGuiInputTextCallbackDelegate?)null);
+        if (string.IsNullOrEmpty(_importModFilter) && !ImGui.IsItemActive())
+        {
+            // Platzhalter-Text manuell zeichnen — InputTextWithHint ist
+            // im Overload-Set des Dalamud-Bindings nicht identisch
+            // verfügbar, und ein eigener Overlay-Text reicht hier.
+            var min = ImGui.GetItemRectMin();
+            var pad = ImGui.GetStyle().FramePadding;
+            ImGui.GetWindowDrawList().AddText(
+                new Vector2(min.X + pad.X, min.Y + pad.Y),
+                ImGui.GetColorU32(ImGuiCol.TextDisabled),
+                Strings.ImportModFilterHint);
+        }
+
+        if (ImGui.BeginChild("##import-mods", new Vector2(0, 150), border: true))
+        {
+            foreach (var mod in mods)
+            {
+                if (!string.IsNullOrEmpty(_importModFilter)
+                    && !mod.ModName.Contains(_importModFilter, StringComparison.OrdinalIgnoreCase)
+                    && !mod.ModDirectory.Contains(_importModFilter, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var sel = _importOptions.IsModSelected(mod.ModDirectory);
+                // ModDirectory als ID-Suffix, weil Anzeigenamen nicht
+                // eindeutig sind (zwei Mods können gleich heißen).
+                if (ImGui.Checkbox($"{mod.ModName}##{mod.ModDirectory}", ref sel))
+                    _importOptions.SetModSelected(mod.ModDirectory, sel);
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip(Strings.ImportModTooltip(mod.ModDirectory, mod.Priority, mod.Settings.Count));
+
+                if (!mod.Enabled)
+                {
+                    ImGui.SameLine();
+                    ImGui.TextDisabled($"({Strings.ImportModDisabledTag})");
+                }
+            }
+        }
+        ImGui.EndChild();
+    }
+
     private void RunImport(bool dryRun)
     {
-        if (string.IsNullOrEmpty(_importPath))
+        if (_importParsed is null)
             return;
 
         var target = _objectTable.LocalPlayer;
@@ -758,16 +983,9 @@ public sealed class MainWindow : Window, IDisposable
 
         try
         {
-            var json = File.ReadAllText(_importPath);
-            var exp = System.Text.Json.JsonSerializer.Deserialize<DocumentationExport>(
-                          json,
-                          new System.Text.Json.JsonSerializerOptions
-                          {
-                              PropertyNameCaseInsensitive = true,
-                              Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
-                          })
-                      ?? throw new InvalidOperationException(Strings.ImportEmpty);
-            _importResult = dryRun ? _importer.DryRun(exp, target) : _importer.Apply(exp, target);
+            _importResult = dryRun
+                ? _importer.DryRun(_importParsed, target, _importOptions)
+                : _importer.Apply(_importParsed, target, _importOptions);
         }
         catch (Exception ex)
         {

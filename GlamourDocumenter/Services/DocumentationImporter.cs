@@ -5,6 +5,10 @@
 //  Bietet Dry-Run und Apply als getrennte Methoden — das UI führt
 //  ersteres zur Anzeige aus, zweiteres erst nach Bestätigung.
 //
+//  Was importiert wird, steuert ein ImportOptions-Objekt (Plugin-Teile,
+//  Unter-Flags, einzelne Mods). Abgewählte Teile erscheinen im Report
+//  als „übersprungen", damit der Dry-Run 1:1 zeigt, was Apply tut.
+//
 //  Customize+ wird bewusst ausgelassen: die IPC-Setter sind weniger
 //  klar dokumentiert, und der User kann das Template-JSON direkt in
 //  Customize+ einfügen (copy & paste).
@@ -42,22 +46,24 @@ public sealed class DocumentationImporter
     }
 
     /// <summary>
-    ///     Zeigt ohne Schreib-Operation an, was ein Apply tun würde.
+    ///     Zeigt ohne Schreib-Operation an, was ein Apply mit denselben
+    ///     <paramref name="options"/> tun würde.
     /// </summary>
-    public string DryRun(DocumentationExport export, IPlayerCharacter target)
-        => BuildReport(export, target, applyWrites: false);
+    public string DryRun(DocumentationExport export, IPlayerCharacter target, ImportOptions options)
+        => BuildReport(export, target, options, applyWrites: false);
 
     /// <summary>
     ///     Führt die Änderungen tatsächlich durch. Glamourer wird vor
     ///     Penumbra angewendet, damit die Material-/Customize-Einträge
     ///     bereits konsistent sind, wenn Mods umgeschaltet werden.
     /// </summary>
-    public string Apply(DocumentationExport export, IPlayerCharacter target)
-        => BuildReport(export, target, applyWrites: true);
+    public string Apply(DocumentationExport export, IPlayerCharacter target, ImportOptions options)
+        => BuildReport(export, target, options, applyWrites: true);
 
     // ----------------------------------------------------------------
 
-    private string BuildReport(DocumentationExport export, IPlayerCharacter target, bool applyWrites)
+    private string BuildReport(
+        DocumentationExport export, IPlayerCharacter target, ImportOptions options, bool applyWrites)
     {
         var sb = new StringBuilder();
         sb.Append("# ").AppendLine(applyWrites ? "Re-Import" : "Dry-Run");
@@ -67,9 +73,9 @@ public sealed class DocumentationImporter
           .Append(" @ ").AppendLine(export.ExportedAt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture));
         sb.AppendLine();
 
-        ProcessGlamourer(sb, export.Glamourer, target, applyWrites);
-        ProcessPenumbra(sb, export.Penumbra, target, applyWrites);
-        ProcessCustomizePlus(sb, export.CustomizePlus);
+        ProcessGlamourer(sb, export.Glamourer, target, options, applyWrites);
+        ProcessPenumbra(sb, export.Penumbra, target, options, applyWrites);
+        ProcessCustomizePlus(sb, export.CustomizePlus, options);
 
         return sb.ToString();
     }
@@ -77,10 +83,18 @@ public sealed class DocumentationImporter
     // ----------------------------------------------------------------- Glamourer
 
     private void ProcessGlamourer(
-        StringBuilder sb, GlamourerExport? glam, IPlayerCharacter target, bool applyWrites)
+        StringBuilder sb, GlamourerExport? glam, IPlayerCharacter target,
+        ImportOptions options, bool applyWrites)
     {
         sb.AppendLine("## Glamourer");
         sb.AppendLine();
+
+        if (!options.Glamourer)
+        {
+            sb.AppendLine("_Übersprungen — in der Auswahl abgewählt._");
+            sb.AppendLine();
+            return;
+        }
 
         if (glam is null)
         {
@@ -98,23 +112,44 @@ public sealed class DocumentationImporter
             return;
         }
 
+        // Flags aus den Unter-Checkboxen zusammensetzen. Once-Flag NICHT
+        // setzen, damit die Änderung persistiert bis zur nächsten
+        // Glamourer-Operation. Lock bleibt aus, damit andere Tools
+        // (z. B. Auto-Apply) weiterhin den State ändern dürfen.
+        var flags = (ApplyFlag)0;
+        var parts = new List<string>(2);
+        if (options.GlamourerEquipment)
+        {
+            flags |= ApplyFlag.Equipment;
+            parts.Add("Equipment");
+        }
+        if (options.GlamourerCustomization)
+        {
+            flags |= ApplyFlag.Customization;
+            parts.Add("Customization");
+        }
+
+        if (parts.Count == 0)
+        {
+            sb.AppendLine("_Übersprungen — weder Equipment noch Customization ausgewählt._");
+            sb.AppendLine();
+            return;
+        }
+
+        var partsLabel = string.Join(" + ", parts);
+
         if (!applyWrites)
         {
             sb.Append("- Wird State auf `").Append(target.Name.TextValue)
-              .AppendLine("` anwenden (Equipment + Customization).");
+              .Append("` anwenden (").Append(partsLabel).AppendLine(").");
             sb.AppendLine();
             return;
         }
 
         try
         {
-            // Flags: Equipment + Customization anwenden, Once-Flag NICHT
-            // setzen, damit die Änderung persistiert bis zur nächsten
-            // Glamourer-Operation. Lock bleibt aus, damit andere Tools
-            // (z. B. Auto-Apply) weiterhin den State ändern dürfen.
-            var flags = ApplyFlag.Equipment | ApplyFlag.Customization;
             var ec = _glamourer.ApplyState(payload, target, flags);
-            sb.Append("- ApplyState-Ergebnis: `").Append(ec).AppendLine("`");
+            sb.Append("- ApplyState (").Append(partsLabel).Append("): `").Append(ec).AppendLine("`");
         }
         catch (Exception ex)
         {
@@ -127,14 +162,29 @@ public sealed class DocumentationImporter
     // ----------------------------------------------------------------- Penumbra
 
     private void ProcessPenumbra(
-        StringBuilder sb, PenumbraExport? penumbra, IPlayerCharacter target, bool applyWrites)
+        StringBuilder sb, PenumbraExport? penumbra, IPlayerCharacter target,
+        ImportOptions options, bool applyWrites)
     {
         sb.AppendLine("## Penumbra");
         sb.AppendLine();
 
+        if (!options.Penumbra)
+        {
+            sb.AppendLine("_Übersprungen — in der Auswahl abgewählt._");
+            sb.AppendLine();
+            return;
+        }
+
         if (penumbra is null)
         {
             sb.AppendLine("_Kein Penumbra-Teil in der Quelle._");
+            sb.AppendLine();
+            return;
+        }
+
+        if (!options.PenumbraEffective)
+        {
+            sb.AppendLine("_Übersprungen — weder Status, Priorität noch Optionen ausgewählt._");
             sb.AppendLine();
             return;
         }
@@ -159,39 +209,80 @@ public sealed class DocumentationImporter
             sb.AppendLine($"- _Hinweis: Export kam aus Collection „{penumbra.CollectionName}“. " +
                           "Wir schreiben in die aktuell aktive Ziel-Collection._");
         }
+
+        // Welche Felder pro Mod geschrieben werden — einmal oben im
+        // Report, statt pro Mod zu wiederholen.
+        var fields = new List<string>(3);
+        if (options.PenumbraEnabledState) fields.Add("Status");
+        if (options.PenumbraPriority) fields.Add("Priorität");
+        if (options.PenumbraSettings) fields.Add("Optionen");
+        sb.Append("- **Felder:** ").AppendLine(string.Join(", ", fields));
+
+        var selectedMods = penumbra.Mods.Where(m => options.IsModSelected(m.ModDirectory)).ToList();
+        var skippedCount = penumbra.Mods.Count - selectedMods.Count;
+        sb.Append("- **Mods:** ").Append(selectedMods.Count).Append(" von ")
+          .Append(penumbra.Mods.Count).Append(" ausgewählt");
+        if (skippedCount > 0)
+            sb.Append(" (").Append(skippedCount).Append(" übersprungen)");
         sb.AppendLine();
+        sb.AppendLine();
+
+        if (selectedMods.Count == 0)
+        {
+            sb.AppendLine("_Keine Mods ausgewählt — nichts zu tun._");
+            sb.AppendLine();
+            return;
+        }
 
         var okCount = 0;
         var failCount = 0;
 
-        foreach (var mod in penumbra.Mods)
+        foreach (var mod in selectedMods)
         {
             if (!applyWrites)
             {
-                sb.Append("- **Plan:** `").Append(mod.ModName)
-                  .Append("` → enabled=").Append(mod.Enabled)
-                  .Append(", priority=").Append(mod.Priority)
-                  .Append(", settings=").Append(mod.Settings.Count).AppendLine();
+                sb.Append("- **Plan:** `").Append(mod.ModName).Append('`');
+                if (options.PenumbraEnabledState)
+                    sb.Append(" → enabled=").Append(mod.Enabled);
+                if (options.PenumbraPriority)
+                    sb.Append(", priority=").Append(mod.Priority);
+                if (options.PenumbraSettings)
+                    sb.Append(", settings=").Append(mod.Settings.Count);
+                sb.AppendLine();
                 continue;
             }
 
             var results = new List<string>();
+            var allOk = true;
 
-            var ecEnabled = _penumbra.SetModEnabled(collectionId, mod.ModDirectory, mod.Enabled);
-            results.Add($"enabled={ecEnabled}");
-
-            var ecPriority = _penumbra.SetModPriority(collectionId, mod.ModDirectory, mod.Priority);
-            results.Add($"priority={ecPriority}");
-
-            foreach (var setting in mod.Settings)
+            if (options.PenumbraEnabledState)
             {
-                var ec = _penumbra.SetModSettings(
-                    collectionId, mod.ModDirectory, setting.Key, setting.Value);
-                results.Add($"{setting.Key}={ec}");
+                var ecEnabled = _penumbra.SetModEnabled(collectionId, mod.ModDirectory, mod.Enabled);
+                results.Add($"enabled={ecEnabled}");
+                allOk &= IsOk(ecEnabled);
             }
 
-            var allOk = ecEnabled is PenumbraApiEc.Success or PenumbraApiEc.NothingChanged
-                     && ecPriority is PenumbraApiEc.Success or PenumbraApiEc.NothingChanged;
+            if (options.PenumbraPriority)
+            {
+                var ecPriority = _penumbra.SetModPriority(collectionId, mod.ModDirectory, mod.Priority);
+                results.Add($"priority={ecPriority}");
+                allOk &= IsOk(ecPriority);
+            }
+
+            if (options.PenumbraSettings)
+            {
+                foreach (var setting in mod.Settings)
+                {
+                    var ec = _penumbra.SetModSettings(
+                        collectionId, mod.ModDirectory, setting.Key, setting.Value);
+                    results.Add($"{setting.Key}={ec}");
+                    // Settings-Fehler zählen bewusst NICHT in allOk — sie
+                    // waren es auch vorher nicht (Option-Gruppen können auf
+                    // dem Ziel-System fehlen, ohne dass der Mod als solcher
+                    // „kaputt" ist). Sichtbar bleiben sie über results.
+                }
+            }
+
             if (allOk) okCount++; else failCount++;
 
             sb.Append("- ").Append(allOk ? "✓" : "✗").Append(" `").Append(mod.ModName)
@@ -207,12 +298,27 @@ public sealed class DocumentationImporter
         sb.AppendLine();
     }
 
+    /// <summary>
+    ///     <c>NothingChanged</c> zählt als Erfolg — der Zielzustand ist
+    ///     dann bereits erreicht.
+    /// </summary>
+    private static bool IsOk(PenumbraApiEc ec)
+        => ec is PenumbraApiEc.Success or PenumbraApiEc.NothingChanged;
+
     // ----------------------------------------------------------------- Customize+
 
-    private static void ProcessCustomizePlus(StringBuilder sb, CustomizePlusExport? cplus)
+    private static void ProcessCustomizePlus(
+        StringBuilder sb, CustomizePlusExport? cplus, ImportOptions options)
     {
         sb.AppendLine("## Customize+");
         sb.AppendLine();
+
+        if (!options.ShowCustomizePlusTemplate)
+        {
+            sb.AppendLine("_Template-Ausgabe in der Auswahl abgewählt._");
+            sb.AppendLine();
+            return;
+        }
 
         if (cplus is null)
         {
